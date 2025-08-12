@@ -74,6 +74,8 @@ dependencies:
   hive: ^2.2.3
   carousel_slider: ^5.1.1
   syncfusion_flutter_calendar: ^30.1.42
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
   
 dev_dependencies:
   flutter_test:
@@ -85,12 +87,13 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-  custom_lint: ^0.7.5
   flutter_launcher_icons: ^0.14.3
   flutter_native_splash: ^2.4.5
   build_runner: ^2.4.15
   riverpod_generator: ^3.0.0-dev.15
   riverpod_lint: ^3.0.0-dev.15
+  freezed: ^3.1.0
+  json_serializable: ^6.8.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -199,9 +199,10 @@ class DioApi {
 
   /// Xử lý phản hồi từ server
   Response _handleResponse(Response response) {
-    if (response.statusCode == HttpStatusCodes.STATUS_CODE_OK) {
+    final code = response.statusCode ?? 0;
+    if (code >= 200 && code < 300) {
       return response;
     }
-    throw Exception('Error: ${response.statusCode} - ${response.statusMessage}');
+    throw Exception('Error: $code - ${response.statusMessage ?? 'Unexpected'}');
   }
 }

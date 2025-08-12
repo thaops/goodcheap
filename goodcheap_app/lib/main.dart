@@ -1,409 +1,108 @@
 import 'package:flutter/material.dart';
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:goodcheap_app/features/analyze/presentation/analyze_input_screen.dart';
+import 'package:goodcheap_app/common/repositoty/dio_api.dart';
+
 
 void main() {
-  runApp(const MyApp());
+  runApp(MyApp());
 }
-
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'GoodCheap',
       theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        primarySwatch: Colors.blue,
       ),
-      home: const ProductAnalysisPage(),
+      home: AnalyzeInputScreen(),
     );
   }
 }
 
-
 class ProductAnalysisPage extends StatefulWidget {
-  const ProductAnalysisPage({Key? key}) : super(key: key);
+  const ProductAnalysisPage({Key? key, required this.url}) : super(key: key);
+
+  final String url;
 
   @override
   State<ProductAnalysisPage> createState() => _ProductAnalysisPageState();
 }
 
 class _ProductAnalysisPageState extends State<ProductAnalysisPage> {
-  // ---- Data: bám đúng cấu trúc JSON đã gửi ----
-  final Map<String, dynamic> data = {
-    "schemaVersion": "1.0.0",
-    "meta": {
-      "locale": "vi-VN",
-      "currency": "VND",
-      "timestamp": "2025-08-10T10:32:44.730Z",
-      "platform": "tiktok",
-      "productId": "1731229103169571477",
-    },
-    "product": {
-      "title":
-          "HQAi H12 - Tai nghe Bluetooth không dây tích hợp MIC, chống nước, dùng cho iPhone và Android, cảm ứng chạm, chống ồn, âm thanh stereo Hi-Fi 3 quà tặng (dây buộc miễn phí+tay áo trò chơi+nhãn dán)",
-      "canonicalUrl": "https://www.tiktok.com/view/product/1731229103169571477",
-      "images": [
-        {
-          "url":
-              "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/902e5f48ac3e4094952d9c3fcb90135b~tplv-aphluv4xwc-resize-webp:260:260.webp?dr=15582&t=555f072d&ps=933b5bde&shp=7745054a&shcp=9b759fb9&idc=my&from=2001012042"
-        },
-      ],
-      "seller": {},
-      "specs": {},
-      "claims": <String>[],
-    },
-    "aiAnalysis": {
-      "model": "gemini-2.5-flash",
-      "method": ["rubric-scoring", "aspect-sentiment"],
-      "hallucinationRisk": "medium",
-      "biasNotes": "Nguồn sản phẩm có thiên vị; đã yêu cầu evidence cho pros/cons.",
-      "limitations": "Không phải phép đo lab; phụ thuộc dữ liệu công khai.",
-      "citations": [
-        {"evidenceId": "prod:page", "note": "Nguồn tham chiếu"}
-      ],
-      "confidenceDrivers": [
-        "Chỉ có trang bán, thiếu review độc lập",
-        "Một số pros/cons thiếu evidence"
-      ],
-    },
-    "evidence": [
-      {
-        "id": "prod:page",
-        "type": "productPage",
-        "source": "tiktok",
-        "url":
-            "https://www.tiktok.com/view/product/1731229103169571477?_svg=1&checksum=99f9959be5128f035400d143a26ef53906a888a80c1b17480cca85c796290cfc&encode_params=...",
-        "fetchedAt": "2025-08-10T10:32:44.730Z",
-        "reliability": 0.6,
-        "notes": "Trang sản phẩm, có khả năng thiên vị."
+  // Data thực từ API
+  late Map<String, dynamic> data;
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      // TODO(verify): Nếu chạy Android emulator, đổi localhost thành 10.0.2.2
+      final resp = await DioApi().post(
+        'http://192.168.1.37:3000/analyze',
+        data: {"url": widget.url},
+      );
+      // Chấp nhận mọi 2xx (bao gồm 201 Created)
+      final status = resp.statusCode ?? 0;
+      final ok = status >= 200 && status < 300;
+      if (!ok) {
+        setState(() {
+          error = 'HTTP $status: ${resp.statusMessage ?? 'Unexpected'}';
+          loading = false;
+        });
+        return;
       }
-    ],
-    "rubric": {
-      "weights": {
-        "soundQuality": 0.25,
-        "battery": 0.15,
-        "micCall": 0.15,
-        "noiseControl": 0.1,
-        "comfortFit": 0.1,
-        "durability": 0.1,
-        "connectivity": 0.1,
-        "warrantySupport": 0.05
-      },
-      "scoringScale": "0-5",
-      "formula": "overall = SUM((score/5)*weight) * 100",
-    },
-    "aspects": [
-      {
-        "name": "overview",
-        "label": "Tổng quan",
-        "metrics": [
-          {
-            "key": "valueForMoney",
-            "label": "Giá trị/giá",
-            "direction": "higherBetter",
-            "unit": "ratio",
-            "target": {"value": 0.7, "unit": "ratio"},
-            "applicability": "applicable"
-          }
-        ],
-        "confidence": 0.55,
-        "pros": [
-          "Thiết kế không dây tiện lợi với điều khiển cảm ứng",
-          "Tích hợp micro và khả năng chống nước",
-          "Tương thích rộng rãi với cả iPhone và Android",
-          "Hỗ trợ âm thanh Hi-Fi stereo và tính năng chống ồn",
-          "Kèm theo 3 quà tặng miễn phí",
-        ],
-        "cons": [
-          "Chất lượng chống ồn có thể không cao cấp (có thể)",
-          "Thời lượng pin không được đề cập, có thể hạn chế (có thể)",
-          "Độ bền và chất lượng hoàn thiện chưa rõ (có thể)",
-          "Sự thoải mái khi đeo lâu chưa được xác nhận (có thể)",
-          "Chất lượng âm thanh Hi-Fi cần được kiểm chứng thực tế (có thể)",
-        ],
-        "prosDetailed": [
-          {"text": "Thiết kế không dây tiện lợi với điều khiển cảm ứng"},
-          {"text": "Tích hợp micro và khả năng chống nước"},
-          {"text": "Tương thích rộng rãi với cả iPhone và Android"},
-          {"text": "Hỗ trợ âm thanh Hi-Fi stereo và tính năng chống ồn"},
-          {"text": "Kèm theo 3 quà tặng miễn phí"}
-        ],
-        "consDetailed": [
-          {"text": "Chất lượng chống ồn có thể không cao cấp (có thể)"},
-          {"text": "Thời lượng pin không được đề cập, có thể hạn chế (có thể)"},
-          {"text": "Độ bền và chất lượng hoàn thiện chưa rõ (có thể)"},
-          {"text": "Sự thoải mái khi đeo lâu chưa được xác nhận (có thể)"},
-          {"text": "Chất lượng âm thanh Hi-Fi cần được kiểm chứng thực tế (có thể)"}
-        ],
-        "risks": [],
-        "improvements": [],
-        "fitFor": [],
-        "tradeOffs": [],
-        "evidenceIds": [],
-        "quotes": [],
-      },
-      {
-        "name": "soundQuality",
-        "label": "Chất lượng âm thanh",
-        "metrics": [
-          {
-            "key": "detail",
-            "label": "Chi tiết/độ tách lớp",
-            "direction": "higherBetter",
-            "unit": "ratio",
-            "target": {"value": 0.7, "unit": "ratio"},
-            "applicability": "applicable"
-          },
-          {
-            "key": "bassControl",
-            "label": "Kiểm soát bass",
-            "direction": "higherBetter",
-            "unit": "ratio",
-            "target": {"value": 0.6, "unit": "ratio"},
-            "applicability": "applicable"
-          },
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "battery",
-        "label": "Thời lượng pin",
-        "metrics": [
-          {
-            "key": "playbackHours",
-            "label": "Giờ nghe",
-            "direction": "higherBetter",
-            "unit": "hour",
-            "target": {"value": 6, "unit": "hour"},
-            "applicability": "applicable"
-          }
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "micCall",
-        "label": "Đàm thoại/MIC",
-        "metrics": [
-          {
-            "key": "clarity",
-            "label": "Độ rõ MIC",
-            "direction": "higherBetter",
-            "unit": "ratio",
-            "target": {"value": 0.7, "unit": "ratio"},
-            "applicability": "applicable"
-          }
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "noiseControl",
-        "label": "Chống ồn",
-        "metrics": [
-          {
-            "key": "ancDepth",
-            "label": "Độ triệt ồn (dB)",
-            "direction": "higherBetter",
-            "unit": "dB",
-            "target": {"value": 20, "unit": "dB"},
-            "applicability": "unknown"
-          }
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "comfortFit",
-        "label": "Đeo/thoải mái",
-        "metrics": [
-          {
-            "key": "comfort",
-            "label": "Độ thoải mái",
-            "direction": "higherBetter",
-            "unit": "ratio",
-            "target": {"value": 0.7, "unit": "ratio"},
-            "applicability": "applicable"
-          }
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "durability",
-        "label": "Độ bền",
-        "metrics": [
-          {
-            "key": "ipRating",
-            "label": "Chuẩn IP",
-            "direction": "matchBetter",
-            "unit": "ip",
-            "target": ["IPX4", "IP55"],
-            "applicability": "applicable"
-          }
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "connectivity",
-        "label": "Kết nối",
-        "metrics": [
-          {
-            "key": "latency",
-            "label": "Độ trễ (ms)",
-            "direction": "lowerBetter",
-            "unit": "ms",
-            "target": {"value": 100, "unit": "ms"},
-            "applicability": "applicable"
-          },
-          {
-            "key": "codec",
-            "label": "Codec",
-            "direction": "matchBetter",
-            "unit": "set",
-            "target": ["AAC", "aptX"],
-            "applicability": "applicable"
-          },
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-      {
-        "name": "warrantySupport",
-        "label": "Bảo hành/Hỗ trợ",
-        "metrics": [
-          {
-            "key": "warrantyMonths",
-            "label": "Bảo hành (tháng)",
-            "direction": "higherBetter",
-            "unit": "month",
-            "target": {"value": 12, "unit": "month"},
-            "applicability": "applicable"
-          }
-        ],
-        "pros": [],
-        "cons": [],
-        "evidenceIds": [],
-        "confidence": 0.5
-      },
-    ],
-    "scoring": {
-      "aspectScores": [
-        {"name": "overview", "weight": 0, "evidenceIds": <String>[]},
-        {"name": "soundQuality", "weight": 0.25, "evidenceIds": <String>[]},
-        {"name": "battery", "weight": 0.15, "evidenceIds": <String>[]},
-        {"name": "micCall", "weight": 0.15, "evidenceIds": <String>[]},
-        {"name": "noiseControl", "weight": 0.1, "evidenceIds": <String>[]},
-        {"name": "comfortFit", "weight": 0.1, "evidenceIds": <String>[]},
-        {"name": "durability", "weight": 0.1, "evidenceIds": <String>[]},
-        {"name": "connectivity", "weight": 0.1, "evidenceIds": <String>[]},
-        {"name": "warrantySupport", "weight": 0.05, "evidenceIds": <String>[]},
-      ],
-    },
-    "analysis": {
-      "overallScore": 50,
-      "confidence": 0.7,
-      "topDrivers": [
-        {"name": "soundQuality"},
-        {"name": "battery"},
-        {"name": "micCall"}
-      ],
-      "summary":
-          "Tai nghe HQAi H12 là lựa chọn không dây đa năng với nhiều tính năng như chống nước, chống ồn, âm thanh Hi-Fi và tương thích rộng rãi. Tuy nhiên, do thiếu đánh giá từ người dùng, hiệu suất thực tế của các tính năng cao cấp và độ bền sản phẩm cần được kiểm chứng thêm.",
-      "coverage": {}
-    },
-    "decision": {
-      "verdict": "hold",
-      "reasons": [
-        "Không có dữ liệu sản phẩm được cung cấp để đưa ra quyết định chi tiết.",
-        "Vui lòng cung cấp thông tin về sản phẩm (ví dụ: giá, tính năng, đánh giá, điểm số tổng thể, rủi ro) để có thể đưa ra lời khuyên chính xác hơn."
-      ],
-      "nextChecks": <String>[]
-    },
-    "dataIntegrity": {
-      "status": "invalid",
-      "issues": [
-        {
-          "code": "missing_evidence",
-          "severity": "medium",
-          "message": "Pros/cons thiếu evidenceIds",
-          "paths": ["\$.aspects[*].pros", "\$.aspects[*].cons"]
-        },
-        {
-          "code": "mixed_target_types",
-          "severity": "low",
-          "message": "Target có nhiều kiểu trong connectivity",
-          "paths": ["\$.aspects[name=connectivity].metrics[*].target"]
-        },
-        {
-          "code": "buy_url_has_tracking",
-          "severity": "low",
-          "message": "buyUrl chứa tham số tracking",
-          "paths": ["\$.actions.buyUrl"]
-        },
-      ],
-      "recommendation": "Set verdict='hold' cho đến khi sửa dữ liệu và bổ sung evidence.",
-      "coverage": {
-        "requiredAspects": [
-          "overview",
-          "soundQuality",
-          "battery",
-          "micCall",
-          "noiseControl",
-          "comfortFit",
-          "durability",
-          "connectivity",
-          "warrantySupport"
-        ],
-        "presentAspects": [
-          "overview",
-          "soundQuality",
-          "battery",
-          "micCall",
-          "noiseControl",
-          "comfortFit",
-          "durability",
-          "connectivity",
-          "warrantySupport"
-        ]
+
+      // Parse body an toàn (Map hoặc chuỗi JSON)
+      final raw = resp.data;
+      Map<String, dynamic>? map;
+      if (raw is Map<String, dynamic>) {
+        map = raw;
+      } else if (raw is String && raw.isNotEmpty) {
+        try {
+          map = jsonDecode(raw) as Map<String, dynamic>;
+        } catch (_) {}
       }
-    },
-    "statusMessage": {
-      "userFriendly":
-          "Dữ liệu hiện chưa nhất quán nên chúng tôi tạm dừng khuyến nghị mua. Sẽ cập nhật khi xác minh xong.",
-      "technical":
-          "DataIntegrityError: missing_evidence, mixed_target_types, buy_url_has_tracking"
-    },
-    "actions": {
-      "alerts": [
-        {"type": "priceDrop", "thresholdPercent": 10, "currency": "VND", "platform": "tiktok"},
-        {"type": "ratingCount", "minCount": 300, "minAvg": 4.2},
-      ],
-      "buyUrl":
-          "https://www.tiktok.com/view/product/1731229103169571477?_svg=1&checksum=...&utm_source=copy"
+
+      final payload = (map != null)
+          ? (map['data'] is Map<String, dynamic> ? map['data'] as Map<String, dynamic> : map)
+          : null;
+
+      if (payload == null) {
+        setState(() {
+          error = 'Phân tích đã được tạo (HTTP $status) nhưng không có dữ liệu trả về.';
+          loading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        data = payload;
+        loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        error = 'Không thể phân tích: $e';
+        loading = false;
+      });
     }
-  };
+  }
 
   bool copied = false;
   bool imgFailed = false;
@@ -447,7 +146,7 @@ class _ProductAnalysisPageState extends State<ProductAnalysisPage> {
       if (m['name'] == name && m['weight'] is num) return m['weight'] as num;
     }
     return 0;
-    }
+  }
 
   String _humanVerdict(String? verdict) {
     switch ((verdict ?? '').toLowerCase()) {
@@ -501,25 +200,52 @@ class _ProductAnalysisPageState extends State<ProductAnalysisPage> {
     }
   }
 
-Future<void> _open(String url) async {
-  final uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
+  Future<void> _open(String url) async {
+    final uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
 
-  if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
-  if (await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) return;
-  if (await launchUrl(uri, mode: LaunchMode.inAppWebView)) return;
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    if (await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) return;
+    if (await launchUrl(uri, mode: LaunchMode.inAppWebView)) return;
 
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Không mở được liên kết: $url')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không mở được liên kết: $url')),
+      );
+    }
   }
-}
-
 
   // ---- UI ----
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Đang phân tích...')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Lỗi')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+              ),
+              ElevatedButton.icon(
+                onPressed: _fetch,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Thử lại'),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+
     final meta = (data['meta'] ?? {}) as Map<String, dynamic>;
     final product = (data['product'] ?? {}) as Map<String, dynamic>;
     final actions = (data['actions'] ?? {}) as Map<String, dynamic>;
@@ -1099,11 +825,14 @@ class _AlertBox extends StatelessWidget {
           Icon(icon, size: 18, color: iconColor),
           const SizedBox(width: 8),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 2),
-              Text(description, style: const TextStyle(color: Colors.black87)),
-            ]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(description, style: const TextStyle(color: Colors.black87)),
+              ],
+            ),
           ),
         ],
       ),
