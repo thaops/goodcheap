@@ -1,0 +1,5 @@
+2025/08/13-19:34:10.912 301c Creating DB D:\goodcheap\goodcheap-api\.playwright-tiktok\Default\Local Storage\leveldb since it was missing.
+2025/08/13-19:34:10.929 301c Reusing MANIFEST D:\goodcheap\goodcheap-api\.playwright-tiktok\Default\Local Storage\leveldb/MANIFEST-000001
+2025/08/13-19:35:10.949 1964 Level-0 table #5: started
+2025/08/13-19:35:10.954 1964 Level-0 table #5: 28137 bytes OK
+2025/08/13-19:35:10.956 1964 Delete type=0 #3

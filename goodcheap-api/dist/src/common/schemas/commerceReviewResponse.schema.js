@@ -1,0 +1,145 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CommerceReviewResponseSchema = void 0;
+const zod_1 = require("zod");
+exports.CommerceReviewResponseSchema = zod_1.z.object({
+    schemaVersion: zod_1.z.string(),
+    meta: zod_1.z.object({
+        platform: zod_1.z.enum(['tiktok', 'shopee', 'lazada', 'other']),
+        locale: zod_1.z.string(),
+        currency: zod_1.z.string(),
+        timestamp: zod_1.z.string().datetime(),
+        productId: zod_1.z.string(),
+        sourceUrl: zod_1.z.string().url(),
+    }),
+    product: zod_1.z.object({
+        title: zod_1.z.string(),
+        canonicalUrl: zod_1.z.string().url(),
+        brand: zod_1.z.string().optional(),
+        category: zod_1.z.string().optional(),
+        attributes: zod_1.z.record(zod_1.z.string(), zod_1.z.union([zod_1.z.string(), zod_1.z.number(), zod_1.z.boolean()])).optional(),
+        seller: zod_1.z.object({
+            id: zod_1.z.string().optional(),
+            name: zod_1.z.string().optional(),
+            rating: zod_1.z.number().min(0).max(5).optional(),
+            followerCount: zod_1.z.number().int().min(0).optional(),
+            shopAgeMonths: zod_1.z.number().int().min(0).optional(),
+            badges: zod_1.z.array(zod_1.z.string()).optional(),
+        }).optional(),
+        images: zod_1.z.array(zod_1.z.string().url()).min(1),
+        videos: zod_1.z.array(zod_1.z.object({
+            url: zod_1.z.string().url(),
+            type: zod_1.z.enum(['demo', 'creator_review', 'live_replay', 'ugc']).optional(),
+            views: zod_1.z.number().int().min(0).optional(),
+            likes: zod_1.z.number().int().min(0).optional(),
+            evidenceId: zod_1.z.string().optional(),
+        })).optional(),
+    }),
+    pricing: zod_1.z.object({
+        currentPrice: zod_1.z.number().optional(),
+        originalPrice: zod_1.z.number().optional(),
+        currency: zod_1.z.string().optional(),
+        discountPct: zod_1.z.number().optional(),
+        priceHistory: zod_1.z.array(zod_1.z.object({
+            date: zod_1.z.string().date(),
+            price: zod_1.z.number(),
+        })).optional(),
+    }).optional(),
+    availability: zod_1.z.object({
+        stockStatus: zod_1.z.enum(['in_stock', 'low_stock', 'out_of_stock', 'preorder', 'unknown']).optional(),
+        stockCount: zod_1.z.number().int().optional(),
+        shipFrom: zod_1.z.string().optional(),
+        shippingOptions: zod_1.z.array(zod_1.z.object({
+            carrier: zod_1.z.string().optional(),
+            etaDays: zod_1.z.number().int().optional(),
+            fee: zod_1.z.number().optional(),
+        })).optional(),
+    }).optional(),
+    policies: zod_1.z.object({
+        returnPolicy: zod_1.z.string().optional(),
+        returnWindowDays: zod_1.z.number().int().optional(),
+        buyerProtection: zod_1.z.string().optional(),
+        warranty: zod_1.z.string().optional(),
+    }).optional(),
+    socialProof: zod_1.z.object({
+        ratingAvg: zod_1.z.number().min(0).max(5).optional(),
+        ratingCount: zod_1.z.number().int().min(0).optional(),
+        ratingBreakdown: zod_1.z.record(zod_1.z.string(), zod_1.z.number().int()).optional(),
+        qnaCount: zod_1.z.number().int().min(0).optional(),
+    }).optional(),
+    reviews: zod_1.z.array(zod_1.z.object({
+        id: zod_1.z.string(),
+        author: zod_1.z.string().optional(),
+        rating: zod_1.z.number().min(1).max(5),
+        text: zod_1.z.string(),
+        pros: zod_1.z.array(zod_1.z.string()).optional(),
+        cons: zod_1.z.array(zod_1.z.string()).optional(),
+        media: zod_1.z.array(zod_1.z.string().url()).optional(),
+        helpfulCount: zod_1.z.number().int().optional(),
+        verifiedPurchase: zod_1.z.boolean().optional(),
+        language: zod_1.z.string().optional(),
+        date: zod_1.z.string().date(),
+        source: zod_1.z.enum(['platform', 'tiktok_video', 'external', 'unknown']),
+        evidenceId: zod_1.z.string(),
+    })),
+    reviewSummary: zod_1.z.object({
+        topPros: zod_1.z.array(zod_1.z.string()).optional(),
+        topCons: zod_1.z.array(zod_1.z.string()).optional(),
+        topics: zod_1.z.array(zod_1.z.object({
+            name: zod_1.z.string(),
+            sentiment: zod_1.z.enum(['positive', 'neutral', 'negative']).optional(),
+            supportCount: zod_1.z.number().int().optional(),
+            confidence: zod_1.z.number().min(0).max(1).optional(),
+            evidenceIds: zod_1.z.array(zod_1.z.string()).optional(),
+        })).optional(),
+    }).optional(),
+    psychology: zod_1.z.object({
+        buyerDecisionScorecard: zod_1.z.object({
+            trust: zod_1.z.number().min(0).max(2).optional(),
+            evidence: zod_1.z.number().min(0).max(2).optional(),
+            riskReversal: zod_1.z.number().min(0).max(2).optional(),
+            easeToBuy: zod_1.z.number().min(0).max(2).optional(),
+            urgency: zod_1.z.number().min(0).max(2).optional(),
+            total: zod_1.z.number().min(0).max(10).optional(),
+        }).optional(),
+        factors: zod_1.z.object({
+            socialProofStrength: zod_1.z.number().min(0).max(1).optional(),
+            lossAversionMitigation: zod_1.z.number().min(0).max(1).optional(),
+            ambiguityMitigation: zod_1.z.number().min(0).max(1).optional(),
+            urgencyScarcity: zod_1.z.number().min(0).max(1).optional(),
+            abilityFriction: zod_1.z.number().min(0).max(1).optional(),
+        }).optional(),
+        notes: zod_1.z.array(zod_1.z.string()).optional(),
+    }).optional(),
+    aiAnalysis: zod_1.z.object({
+        verdict: zod_1.z.enum(['buy', 'consider', 'hold', 'avoid']),
+        confidence: zod_1.z.number().min(0).max(1),
+        reasons: zod_1.z.array(zod_1.z.string()).optional(),
+        claims: zod_1.z.array(zod_1.z.object({
+            label: zod_1.z.string(),
+            value: zod_1.z.union([zod_1.z.string(), zod_1.z.number(), zod_1.z.boolean(), zod_1.z.object({}).optional(), zod_1.z.array(zod_1.z.any()).optional(), zod_1.z.null()]),
+            confidence: zod_1.z.number().min(0).max(1).optional(),
+            evidenceId: zod_1.z.string(),
+        })).optional(),
+        citations: zod_1.z.array(zod_1.z.object({
+            evidenceId: zod_1.z.string(),
+            note: zod_1.z.string().optional(),
+            reliability: zod_1.z.number().min(0).max(1).optional(),
+        })),
+    }),
+    evidence: zod_1.z.array(zod_1.z.object({
+        id: zod_1.z.string(),
+        type: zod_1.z.enum(['productPage', 'review', 'creatorVideo', 'live', 'qna', 'shopPolicy', 'externalPage']),
+        url: zod_1.z.string().url(),
+        reliability: zod_1.z.number().min(0).max(1).optional(),
+        freshnessDays: zod_1.z.number().min(0).optional(),
+        scrapedAt: zod_1.z.string().datetime(),
+    })).min(1),
+    system: zod_1.z.object({
+        llm: zod_1.z.string().optional(),
+        llmVersion: zod_1.z.string().optional(),
+        latencyMs: zod_1.z.number().int().optional(),
+        warnings: zod_1.z.array(zod_1.z.string()).optional(),
+    }).optional(),
+});
+//# sourceMappingURL=commerceReviewResponse.schema.js.map

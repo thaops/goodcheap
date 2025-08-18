@@ -2,9 +2,10 @@ import { Injectable, BadRequestException, HttpException, InternalServerErrorExce
 import { UA } from '../common/ua';
 import { pickJsonLdProduct, pickOpenGraph } from '../common/html';
 import { ProductDTO } from '../common/types';
+import { UnfurlInterface } from '../common/interfaces/unfurl.interface';
 
 @Injectable()
-export class UnfurlService {
+export class UnfurlService implements UnfurlInterface {
   private ensureValidUrl(url: string) {
     try {
       // Throws on invalid

@@ -5,9 +5,13 @@ import { ReviewsService } from '../reviews/reviews.service';
 
 @Injectable()
 export class AnalyzeService {
+
   private gemini: GoogleGenerativeAI | null;
   private modelName: string;
   private readonly logger = new Logger(AnalyzeService.name);
+  private get debugTiming() { return (process.env.GC_DEBUG_TIMING ?? '0') === '1'; }
+  private now() { return Date.now(); }
+  private dur(t0: number) { return Date.now() - t0; }
 
   constructor(private readonly reviewsService: ReviewsService) {
     const key = process.env.GOOGLE_API_KEY?.trim();
@@ -18,7 +22,49 @@ export class AnalyzeService {
   private norm(v: number | undefined | null, min = 0, max = 1) {
     if (v == null) return 0.5;
     const x = Math.max(min, Math.min(max, v));
-    return (x - min) / (max - min);
+    return x;
+  }
+
+  // Robustly parse JSON from LLM responses that may include Markdown fences or extra text
+  private parseJsonLlm(raw: string | undefined | null): any {
+    const fallbackEmpty = {};
+    if (!raw) return fallbackEmpty;
+    let text = String(raw).trim();
+
+    // Strip Markdown code fences like ```json ... ``` or ``` ... ```
+    if (text.startsWith('```')) {
+      // Remove opening fence with optional language
+      text = text.replace(/^```[a-zA-Z]*\s*/m, '');
+      // Remove trailing fence (last occurrence)
+      const lastFence = text.lastIndexOf('```');
+      if (lastFence !== -1) {
+        text = text.slice(0, lastFence);
+      }
+      text = text.trim();
+    }
+
+    // First attempt: direct parse
+    try { return JSON.parse(text); } catch {}
+
+    // Second attempt: extract the first plausible JSON object or array
+    const candidates: string[] = [];
+    const objStart = text.indexOf('{');
+    const objEnd = text.lastIndexOf('}');
+    if (objStart !== -1 && objEnd > objStart) {
+      candidates.push(text.slice(objStart, objEnd + 1));
+    }
+    const arrStart = text.indexOf('[');
+    const arrEnd = text.lastIndexOf(']');
+    if (arrStart !== -1 && arrEnd > arrStart) {
+      candidates.push(text.slice(arrStart, arrEnd + 1));
+    }
+    for (const c of candidates) {
+      try { return JSON.parse(c); } catch {}
+    }
+
+    // Last resort: log and return empty to fail-soft (avoid 400 to client when fallback is enabled)
+    this.logger.warn('Failed to parse JSON from LLM response, returning empty object');
+    return fallbackEmpty;
   }
 
   /** Score cơ bản từ rating/reviewCount, có thể nâng cấp sau */
@@ -36,6 +82,97 @@ export class AnalyzeService {
     return Math.max(0, Math.min(100, Math.round(score)));
   }
 
+  async summarizeProsCons(p: ProductDTO) {
+    // Chỉ gọi LLM nội bộ khi RÕ RÀNG bật GC_ENABLE_LLM=true và có key
+    const LLM_ENABLED = (process.env.GC_ENABLE_LLM ?? 'false') === 'true';
+    const FALLBACK = process.env.ANALYZE_FALLBACK === '1';
+    const canUseLlmInternally = !!this.gemini && LLM_ENABLED && !FALLBACK;
+
+    if (!canUseLlmInternally) {
+      // Bypass OpenAI khi tắt LLM hoặc bật fallback hoặc thiếu key
+        // Trả về response evidence-driven ngay cả khi không có Gemini
+        // Dựa vào dữ liệu sản phẩm có sẵn để tạo pros/cons cơ bản
+        const pros: string[] = [];
+        const cons: string[] = [];
+        
+        // Thêm tiêu đề vào pros nếu có
+        if (p.title) {
+          pros.push(`Sản phẩm có tiêu đề: "${p.title}"`);
+        }
+        
+        // Thêm giá vào pros/cons nếu có
+        if (p.price) {
+          pros.push(`Sản phẩm có giá ${p.price} ${p.currency || 'VND'}`);
+        } else {
+          cons.push('Không có thông tin giá');
+        }
+        
+        // Thêm rating vào pros nếu có
+        if (p.ratingAvg) {
+          pros.push(`Sản phẩm có đánh giá trung bình ${p.ratingAvg}/5 sao`);
+        } else {
+          cons.push('Không có đánh giá trung bình');
+        }
+        
+        // Thêm số lượng review vào pros nếu có
+        if (p.reviewCount) {
+          pros.push(`Sản phẩm có ${p.reviewCount} đánh giá`);
+        } else {
+          cons.push('Không có số lượng đánh giá');
+        }
+        
+        // Thêm ảnh vào pros nếu có
+        if (p.images?.length) {
+          pros.push(`Sản phẩm có ${p.images.length} ảnh minh họa`);
+        } else {
+          cons.push('Không có ảnh minh họa');
+        }
+        
+        return { 
+          pros: pros.filter(Boolean), 
+          cons: cons.filter(Boolean), 
+          summary: p.title ? `Phân tích sản phẩm: ${p.title}` : undefined, 
+          confidence: 0.3 // Confidence thấp hơn khi không có Gemini
+        };
+      }
+    else {
+      const reviewsText = (p.reviewsSample || [])
+        .map(r => `- (${r.rating ?? 'n/a'}★) ${r.text}`)
+        .slice(0, 30) // giới hạn để tiết kiệm token
+        .join('\n');
+
+      const base = `${p.title || ''}\n\n${(p.description || '').slice(0, 1500)}\n\nReviews:\n${reviewsText}`;
+
+      try {
+        const model = this.gemini!.getGenerativeModel({ model: this.modelName, generationConfig: { responseMimeType: 'application/json' } });
+        const prompt = `Tóm tắt điểm mạnh và điểm yếu của sản phẩm từ dữ liệu sau:\n\n${base}\n\nTrả về JSON hợp lệ với schema: { pros: string[], cons: string[], summary: string, confidence: number }`;
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        const parsed = this.parseJsonLlm(text);
+        return {
+          pros: Array.isArray(parsed.pros) ? parsed.pros.filter(Boolean) : [],
+          cons: Array.isArray(parsed.cons) ? parsed.cons.filter(Boolean) : [],
+          summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
+          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : undefined,
+        };
+      } catch (e: any) {
+        const status = e?.status ?? e?.response?.status ?? e?.response?.statusCode;
+        const code = e?.code ?? e?.response?.data?.error?.status;
+        const msg = e?.message || 'Gemini request failed';
+        this.logger.error(`Gemini summarize failed`, { status, code, msg });
+        // Fallback đường tắt khi quota/ lỗi tạm thởi
+        const pros: string[] = [];
+        const cons: string[] = [];
+        if (p.title) pros.push(`Sản phẩm có tiêu đề: "${p.title}"`);
+        if (p.price) pros.push(`Sản phẩm có giá ${p.price} ${p.currency || 'VND'}`); else cons.push('Không có thông tin giá');
+        if (p.ratingAvg) pros.push(`Sản phẩm có đánh giá trung bình ${p.ratingAvg}/5 sao`); else cons.push('Không có đánh giá trung bình');
+        if (p.reviewCount) pros.push(`Sản phẩm có ${p.reviewCount} đánh giá`); else cons.push('Không có số lượng đánh giá');
+        if (p.images?.length) pros.push(`Sản phẩm có ${p.images.length} ảnh minh họa`); else cons.push('Không có ảnh minh họa');
+        return { pros: pros.filter(Boolean), cons: cons.filter(Boolean), summary: p.title ? `Phân tích sản phẩm: ${p.title}` : undefined, confidence: 0.3 };
+      }
+    }
+  }
+
   detectRedFlags(p: ProductDTO): string[] {
     const flags: string[] = [];
     if (!p.title) flags.push('Thiếu tiêu đề rõ ràng');
@@ -44,103 +181,10 @@ export class AnalyzeService {
     return flags;
   }
 
-  private buildPriceBenchmarks(p: ProductDTO) {
-    if (!p.price) return undefined;
-    const currency = p.currency;
-    // Placeholder heuristic ±10%
-    const median = p.price;
-    const low = Math.round(p.price * 0.9);
-    const high = Math.round(p.price * 1.1);
-    return { median, low, high, currency };
-  }
-
-  private buildAlternatives(p: ProductDTO): AlternativeItem[] | undefined {
-    if (!p.title) return undefined;
-    // Placeholder mock alternatives: sau này thay bằng search marketplace
-    const title = p.title;
-    const currency = p.currency || 'VND';
-    const base = p.price || 0;
-    const alt: AlternativeItem[] = [
-      { title: `${title} (phiên bản cũ)`, price: base ? Math.max(0, Math.round(base * 0.85)) : undefined, currency, score: Math.max(0, this.calcScore(p) - 5) },
-      { title: `${title} (đối thủ)`, price: base ? Math.round(base * 0.95) : undefined, currency, score: Math.max(0, this.calcScore(p) - 3) },
-    ];
-    return alt;
-  }
-
-  private buildActions(p: ProductDTO): ActionsDTO {
-    return {
-      buyUrl: p.finalUrl,
-      trackPrice: true,
-    };
-  }
-
-  async summarizeProsCons(p: ProductDTO) {
-    if (!this.gemini) {
-      // Cho phép bypass OpenAI khi bật fallback
-      if (process.env.ANALYZE_FALLBACK === '1') {
-        return { pros: [], cons: [], summary: undefined, confidence: 0.5 };
-      }
-      throw new ServiceUnavailableException('Missing GOOGLE_API_KEY');
-    }
-
-    const reviewsText = (p.reviewsSample || [])
-      .map(r => `- (${r.rating ?? 'n/a'}★) ${r.text}`)
-      .slice(0, 30) // giới hạn để tiết kiệm token
-      .join('\n');
-
-    const base = `${p.title || ''}\n\n${(p.description || '').slice(0, 1500)}\n\nReviews:\n${reviewsText}`;
-    const prompt = `
-Bạn là trợ lý đánh giá sản phẩm. Dựa trên thông tin sau, hãy tạo:
-- pros: 3–6 gạch đầu dòng (ngắn, khách quan)
-- cons: 3–6 gạch đầu dòng (rủi ro/nhược điểm khả dĩ)
-- summary: 1–2 câu tóm tắt
-- confidence: số 0..1 mức tự tin
-Nếu thiếu dữ liệu, suy luận hợp lý theo phân khúc (và ghi rõ "có thể").
-Trả về JSON: {"pros":[],"cons":[],"summary":"","confidence":0}
-
-Thông tin:
-${base}
-`;
-
-    try {
-      const model = this.gemini.getGenerativeModel({
-        model: this.modelName,
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-      });
-      const resp = await model.generateContent(prompt);
-      const text = resp?.response?.text?.() ?? '';
-      try {
-        const parsed = JSON.parse(text || '{}');
-        return {
-          pros: parsed.pros || [],
-          cons: parsed.cons || [],
-          summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
-          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : undefined,
-        };
-      } catch {
-        return { pros: [], cons: [], summary: undefined, confidence: undefined };
-      }
-    } catch (e: any) {
-      // Fallback đường tắt khi quota/ lỗi tạm thởi
-      if (process.env.ANALYZE_FALLBACK === '1') {
-        return { pros: [], cons: [], summary: undefined, confidence: 0.5 };
-      }
-
-      const status = e?.status ?? e?.response?.status ?? e?.response?.statusCode;
-      const msg = e?.message || 'Gemini request failed';
-      if (status === 401) {
-        throw new UnauthorizedException('Gemini unauthorized: kiểm tra GOOGLE_API_KEY');
-      }
-      if (status === 429) {
-        throw new HttpException('Gemini quota exceeded (429): kiểm tra plan/billing', HttpStatus.TOO_MANY_REQUESTS);
-      }
-      throw new BadRequestException(`Gemini error: ${msg}`);
-    }
-  }
-
   async decisionAndReviewInsights(p: ProductDTO, baseAnalysis: Pick<AnalysisDTO, 'goodCheapScore' | 'pros' | 'cons' | 'redFlags' | 'summary'>) {
     // Fallback rule-based khi không dùng OpenAI
-    if (!this.gemini || process.env.ANALYZE_FALLBACK === '1') {
+    const LLM_ENABLED = (process.env.GC_ENABLE_LLM ?? 'false') === 'true';
+    if (!this.gemini || process.env.ANALYZE_FALLBACK === '1' || !LLM_ENABLED) {
       return {
         decision: this.ruleVerdict(baseAnalysis.goodCheapScore, baseAnalysis.redFlags),
         reviewInsights: {
@@ -156,36 +200,30 @@ ${base}
       currency: p.currency,
       ratingAvg: p.ratingAvg,
       reviewCount: p.reviewCount,
-      shopName: p.shopName,
-      summary: baseAnalysis.summary,
-      pros: baseAnalysis.pros,
-      cons: baseAnalysis.cons,
-      redFlags: baseAnalysis.redFlags,
+      description: p.description,
+      reviewsSample: p.reviewsSample,
     };
-    const prompt = `Bạn là cố vấn mua sắm. Hãy dựa vào dữ liệu sau để quyết định có nên mua sản phẩm hay không.
-Trả về JSON đúng schema:
-{"decision":{"verdict":"buy|consider|avoid","rationale":["..."]},"reviewInsights":{"positives":["..."],"negatives":["..."],"commonComplaints":["..."]}}
-
-Nguyên tắc:
-- "buy" khi ưu điểm rõ ràng, rủi ro thấp, điểm tổng cao.
-- "consider" khi còn thiếu thông tin, một vài rủi ro có thể chấp nhận.
-- "avoid" khi rủi ro cao, điểm thấp, hoặc thông tin đáng ngờ.
-- Rationale ngắn gọn, dựa vào các gạch đầu dòng và số liệu.
-` + (p.reviewsSample?.length ? `\nMột số review mẫu:\n${p.reviewsSample.slice(0,20).map(r=>`- (${r.rating??'n/a'}★) ${r.text}`).join('\n')}` : '') + `
-`;
 
     try {
-      const model = this.gemini.getGenerativeModel({
-        model: this.modelName,
-        generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
-      });
-      const resp = await model.generateContent(prompt);
-      const text = resp?.response?.text?.() ?? '';
-      const parsed = JSON.parse(text || '{}');
-      return {
-        decision: parsed.decision || this.ruleVerdict(baseAnalysis.goodCheapScore, baseAnalysis.redFlags),
-        reviewInsights: parsed.reviewInsights || { positives: baseAnalysis.pros, negatives: baseAnalysis.cons },
-      };
+      const model = this.gemini.getGenerativeModel({ model: this.modelName });
+      const prompt = `Phân tích sản phẩm dựa trên dữ liệu sau:\n${JSON.stringify(context)}\n\nTrả về JSON hợp lệ với schema: { decision: { verdict: "buy"|"consider"|"avoid", rationale: string[] }, reviewInsights: { positives: string[], negatives: string[] } }`;
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const parsed = this.parseJsonLlm(text);
+
+      // Validate decision object
+      const validVerdicts = ['buy', 'consider', 'avoid'];
+      const verdict = parsed.decision?.verdict;
+      const rationale = Array.isArray(parsed.decision?.rationale) ? parsed.decision.rationale.filter(Boolean) : [];
+
+      if (!validVerdicts.includes(verdict)) {
+        throw new Error('Invalid verdict in Gemini response');
+      }
+
+      const ri = parsed.reviewInsights || {};
+      const positives = Array.isArray(ri.positives) ? ri.positives.filter(Boolean) : baseAnalysis.pros;
+      const negatives = Array.isArray(ri.negatives) ? ri.negatives.filter(Boolean) : baseAnalysis.cons;
+      return { decision: { verdict, rationale }, reviewInsights: { positives, negatives } };
     } catch (e: any) {
       if (process.env.ANALYZE_FALLBACK === '1') {
         return {
@@ -193,6 +231,7 @@ Nguyên tắc:
           reviewInsights: { positives: baseAnalysis.pros, negatives: baseAnalysis.cons },
         };
       }
+      
       const status = e?.status ?? e?.response?.status ?? e?.response?.statusCode;
       const msg = e?.message || 'Gemini request failed';
       if (status === 401) {
@@ -205,39 +244,91 @@ Nguyên tắc:
     }
   }
 
+  private ruleVerdict(score: number, redFlags: string[]) {
+    let verdict: 'buy' | 'consider' | 'avoid';
+    if (score >= 75 && redFlags.length === 0) verdict = 'buy';
+    else if (score >= 55) verdict = 'consider';
+    else verdict = 'avoid';
+
+    const rationale: string[] = [];
+    rationale.push(`Điểm tổng: ${score}/100`);
+    if (redFlags.length) rationale.push(`Rủi ro: ${redFlags.join('; ')}`);
+    return { verdict, rationale };
+  }
+
   private async buildAspects(p: ProductDTO) {
-    // Fallback rule khi không có OpenAI hoặc không có reviews
+    // Fallback rule khi không có OpenAI hoặc khi bật ANALYZE_FALLBACK
     const simpleFromProsCons = (pros: string[], cons: string[]) => ([
       { name: 'Tổng quan', pros, cons, positiveQuotes: [], negativeQuotes: [] },
     ]);
-
-    if (!this.gemini || process.env.ANALYZE_FALLBACK === '1' || !(p.reviewsSample?.length)) {
+    if (!this.gemini || process.env.ANALYZE_FALLBACK === '1') {
       // Dựa vào summarizeProsCons để ra 1 khối mặc định
       const { pros, cons } = await this.summarizeProsCons(p);
       return simpleFromProsCons(pros, cons);
     }
 
-    const reviews = p.reviewsSample.slice(0, 40).map(r => ({ rating: r.rating, text: r.text })).filter(r => r.text?.trim());
-    const prompt = `Hãy phân tích các review dưới đây và chia theo các khía cạnh phổ biến (ví dụ: Chất âm, Pin, Độ bền, Kết nối, Hậu mãi, Đóng gói...).\nMỗi khía cạnh xuất ra JSON:\n{"name":"","pros":[],"cons":[],"positiveQuotes":[],"negativeQuotes":[]}\nLưu ý: quotes là trích dẫn nguyên văn ngắn từ review. Trả về JSON mảng aspects.`;
-
+    const REQUIRED_ASPECTS = this.getRequiredAspects(p);
+    const reviews = (p.reviewsSample || [])
+      .slice(0, 40)
+      .map(r => ({ rating: r.rating, text: r.text }))
+      .filter(r => r.text?.trim());
+    const productContext = {
+      title: p.title,
+      price: p.price,
+      currency: p.currency,
+      ratingAvg: p.ratingAvg,
+      reviewCount: p.reviewCount,
+      description: p.description,
+      category: (p as any).category,
+      subCategory: (p as any).subCategory,
+    };
+    const prompt = REQUIRED_ASPECTS.length > 0
+      ? `Bạn là chuyên gia phân tích reviews. Hãy xuất JSON mảng "aspects" với ĐẦY ĐỦ các khía cạnh sau theo đúng thứ tự: ${REQUIRED_ASPECTS.join(', ')}.\nQuy tắc bắt buộc:\n- Luôn bao gồm đủ tất cả khía cạnh liệt kê, ngay cả khi dữ liệu ít.\n- Mỗi phần tử có schema: {"name":"<one-of:${REQUIRED_ASPECTS.join('|')}>","pros":[],"cons":[],"positiveQuotes":[],"negativeQuotes":[]}\n- pros/cons: gạch đầu dòng ngắn, dựa trên bằng chứng từ reviews; nếu suy luận hợp lý, ghi rõ "(có thể)".\n- quotes: trích dẫn NGUYÊN VĂN ngắn từ reviews, không chế tác.\n- Chỉ trả JSON thuần, không text khác.\nNgữ cảnh sản phẩm: ${JSON.stringify(productContext)}\nReviews:\n${reviews.map(r=>`- (${r.rating??'n/a'}★) ${r.text}`).join('\n')}`
+      : `Bạn là chuyên gia phân tích reviews. Hãy xuất JSON mảng "aspects" gồm 6–10 khía cạnh LIÊN QUAN NHẤT với sản phẩm và domain.\nQuy tắc:\n- Không bịa thông tin; pros/cons dựa trên bằng chứng từ reviews; nếu suy luận hợp lý, ghi "(có thể)".\n- Mỗi phần tử có schema: {"name":"<slug_ascii>","pros":[],"cons":[],"positiveQuotes":[],"negativeQuotes":[]}\n- quotes: trích dẫn NGUYÊN VĂN ngắn từ reviews, không chế tác.\n- Chỉ trả JSON thuần, không text khác.\nNgữ cảnh sản phẩm: ${JSON.stringify(productContext)}\nReviews:\n${reviews.map(r=>`- (${r.rating??'n/a'}★) ${r.text}`).join('\n')}`;
     try {
       const model = this.gemini.getGenerativeModel({
         model: this.modelName,
         generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
       });
       const resp = await model.generateContent(
-        `${prompt}\n\nReviews:\n${reviews.map(r=>`- (${r.rating??'n/a'}★) ${r.text}`).join('\n')}`
+        prompt
       );
       const text = resp?.response?.text?.() ?? '';
-      const parsed = JSON.parse(text || '{}');
-      const aspects = Array.isArray(parsed) ? parsed : parsed.aspects;
-      if (Array.isArray(aspects)) return aspects;
-      return simpleFromProsCons([], []);
+      const parsed = this.parseJsonLlm(text);
+      const llmAspects = Array.isArray(parsed) ? parsed : parsed.aspects;
+
+      // Chuẩn hoá và đảm bảo đủ khía cạnh bắt buộc
+      const norm = (v: any): { name: string; pros: string[]; cons: string[]; positiveQuotes: string[]; negativeQuotes: string[] } => ({
+        name: String(v?.name ?? '').trim(),
+        pros: Array.isArray(v?.pros) ? v.pros.filter(Boolean) : [],
+        cons: Array.isArray(v?.cons) ? v.cons.filter(Boolean) : [],
+        positiveQuotes: Array.isArray(v?.positiveQuotes) ? v.positiveQuotes.filter(Boolean) : [],
+        negativeQuotes: Array.isArray(v?.negativeQuotes) ? v.negativeQuotes.filter(Boolean) : [],
+      });
+      if (REQUIRED_ASPECTS.length > 0) {
+        const byName = new Map<string, ReturnType<typeof norm>>();
+        if (Array.isArray(llmAspects)) {
+          for (const it of llmAspects) {
+            const n = norm(it);
+            if ((REQUIRED_ASPECTS as readonly string[]).includes(n.name as any)) byName.set(n.name, n);
+          }
+        }
+        const completed = (REQUIRED_ASPECTS as readonly string[]).map(name => (
+          byName.get(name) || { name, pros: [], cons: [], positiveQuotes: [], negativeQuotes: [] }
+        ));
+        return completed;
+      } else {
+        const normalized = Array.isArray(llmAspects) ? llmAspects.map(norm).filter(a => a.name) : [];
+        if (normalized.length > 0) return normalized;
+        const { pros, cons } = await this.summarizeProsCons(p);
+        return simpleFromProsCons(pros, cons);
+      }
     } catch (e: any) {
       if (process.env.ANALYZE_FALLBACK === '1') {
         const { pros, cons } = await this.summarizeProsCons(p);
         return simpleFromProsCons(pros, cons);
       }
+      
       const status = e?.status ?? e?.response?.status ?? e?.response?.statusCode;
       const msg = e?.message || 'Gemini request failed';
       if (status === 401) {
@@ -248,6 +339,19 @@ Nguyên tắc:
       }
       throw new BadRequestException(`Gemini error: ${msg}`);
     }
+  }
+
+  private getRequiredAspects(p: ProductDTO): readonly string[] {
+    const title = (p.title || '').toLowerCase();
+    const cat = ((p as any).category || (p as any).subCategory || '').toLowerCase();
+    const looksAudio = /tai nghe|headphone|earbud|tws|audio|bluetooth/.test(title) || /audio|headphone|earbud|tws/.test(cat);
+    if (looksAudio) {
+      return [
+        'soundQuality', 'battery', 'micCall', 'noiseControl',
+        'comfortFit', 'durability', 'connectivity', 'warrantySupport',
+      ] as const;
+    }
+    return [] as const; // domain khác: để Gemini tự đề xuất
   }
 
   private buildReviewHighlights(p: ProductDTO): { positive: ReviewItem[]; negative: ReviewItem[] } | undefined {
@@ -260,10 +364,10 @@ Nguyên tắc:
       if (ai !== bi) return bi - ai; // ưu tiên có ảnh
       const ah = a.helpfulCount || 0;
       const bh = b.helpfulCount || 0;
-      if (ah !== bh) return bh - ah; // ưu tiên nhiều vote hữu ích
+      if (ah !== bh) return bh - ah; // ưu tiên nhiều vote hữ
       const ar = a.rating ?? 0;
       const br = b.rating ?? 0;
-      return br - ar; // mặc định ưu tiên rating cao cho nhóm positive
+      return br - ar; // rating cao trước
     };
 
     const positives = list
@@ -290,35 +394,38 @@ Nguyên tắc:
     return { positive: positives, negative: negatives };
   }
 
-  async analyzeProduct(p: ProductDTO): Promise<AnalysisDTO> {
-    // Tự động lấy reviews từ URL nếu chưa có
-    if (!p.reviewsSample?.length) {
-      const extractedReviews = await this.reviewsService.extractReviews(p);
-      if (extractedReviews.length > 0) {
-        p.reviewsSample = extractedReviews;
-      }
-    }
+  private buildPriceBenchmarks(p: ProductDTO) {
+    if (!p.price) return undefined;
+    const currency = p.currency;
+    // Placeholder heuristic ±10%
+    const median = p.price;
+    const low = Math.round(p.price * 0.9);
+    const high = Math.round(p.price * 1.1);
+    return { median, low, high, currency };
+  }
 
-    const goodCheapScore = this.calcScore(p);
-    const { pros, cons, summary, confidence } = await this.summarizeProsCons(p);
-    const redFlags = this.detectRedFlags(p);
-    const priceBenchmarks = this.buildPriceBenchmarks(p);
-
-    const { decision, reviewInsights } = await this.decisionAndReviewInsights(p, {
-      goodCheapScore,
-      pros,
-      cons,
-      redFlags,
-      summary,
-    });
-
-    const aspects = await this.buildAspects(p);
-    const reviewHighlights = this.buildReviewHighlights(p);
-
-    return { goodCheapScore, pros, cons, redFlags, summary, confidence, priceBenchmarks, decision, reviewInsights, aspects, reviewHighlights };
+  private buildAlternatives(p: ProductDTO): AlternativeItem[] | undefined {
+    if (!p.title) return undefined;
+    // Placeholder mock alternatives: sau này thay bằng search marketplace
+    const title = p.title;
+    const currency = p.currency || 'VND';
+    const base = p.price || 0;
+    const alt: AlternativeItem[] = [
+      { title: `${title} (phiên bản cũ)`, price: base ? Math.max(0, Math.round(base * 0.85)) : undefined, currency, score: Math.max(0, this.calcScore(p) - 5) },
+      { title: `${title} (đối thủ)`, price: base ? Math.round(base * 0.95) : undefined, currency, score: Math.max(0, this.calcScore(p) - 3) },
+    ];
+    return alt;
   }
 
   // Public helpers cho controller
+  getCautions(p: ProductDTO, analysis: AnalysisDTO) {
+    // Tạm dựa trên redFlags và score thấp
+    const cautions = new Set<string>();
+    for (const f of analysis.redFlags) cautions.add(f);
+    if (analysis.goodCheapScore < 50) cautions.add('Điểm thấp, cân nhắc so sánh thêm');
+    return Array.from(cautions);
+  }
+
   getAlternatives(p: ProductDTO) {
     return this.buildAlternatives(p);
   }
@@ -327,23 +434,353 @@ Nguyên tắc:
     return this.buildActions(p);
   }
 
-  getCautions(p: ProductDTO, analysis: AnalysisDTO): string[] | undefined {
-    // Tạm dựa trên redFlags và score thấp
-    const cautions = new Set<string>();
-    for (const f of analysis.redFlags) cautions.add(f);
-    if (analysis.goodCheapScore < 50) cautions.add('Điểm thấp, cân nhắc so sánh thêm');
-    return Array.from(cautions);
+  private buildActions(p: ProductDTO): ActionsDTO {
+    return {
+      buyUrl: p.finalUrl,
+      trackPrice: true,
+    };
   }
 
-  private ruleVerdict(score: number, redFlags: string[]) {
-    let verdict: 'buy' | 'consider' | 'avoid';
-    if (score >= 75 && redFlags.length === 0) verdict = 'buy';
-    else if (score >= 55) verdict = 'consider';
-    else verdict = 'avoid';
+  async analyzeProduct(p: ProductDTO): Promise<AnalysisDTO> {
+    // Tự động lấy reviews từ URL nếu chưa có
+    const AUTO_SCRAPE = (process.env.GC_AUTO_SCRAPE_REVIEWS ?? 'false') === 'true';
+    if (AUTO_SCRAPE && !p.reviewsSample?.length) {
+      this.logger.log(`analyzeProduct: auto-scrape enabled, try extractReviews source=${p.source} url=${p.finalUrl}`);
+      const extractedReviews = await this.reviewsService.extractReviews(p);
+      this.logger.log(`analyzeProduct: extractedReviews=${extractedReviews.length}`);
+      if (extractedReviews.length > 0) {
+        p.reviewsSample = extractedReviews;
+      }
+    }
 
-    const rationale: string[] = [];
-    rationale.push(`Điểm tổng: ${score}/100`);
-    if (redFlags.length) rationale.push(`Rủi ro: ${redFlags.join('; ')}`);
-    return { verdict, rationale };
+    const goodCheapScore = this.calcScore(p);
+    const t1 = this.now();
+    const { pros, cons, summary, confidence } = await this.summarizeProsCons(p);
+    if (this.debugTiming) this.logger.log(`[timing] summarizeProsCons: ${this.dur(t1)}ms`);
+    const t2 = this.now();
+    const redFlags = this.detectRedFlags(p);
+    if (this.debugTiming) this.logger.log(`[timing] detectRedFlags: ${this.dur(t2)}ms`);
+    const t3 = this.now();
+    const priceBenchmarks = this.buildPriceBenchmarks(p);
+    if (this.debugTiming) this.logger.log(`[timing] buildPriceBenchmarks: ${this.dur(t3)}ms`);
+
+    const t4 = this.now();
+    const { decision, reviewInsights } = await this.decisionAndReviewInsights(p, {
+      goodCheapScore,
+      pros,
+      cons,
+      redFlags,
+      summary,
+    });
+    if (this.debugTiming) this.logger.log(`[timing] decisionAndReviewInsights: ${this.dur(t4)}ms`);
+
+    const t5 = this.now();
+    const aspects = await this.buildAspects(p);
+    if (this.debugTiming) this.logger.log(`[timing] buildAspects: ${this.dur(t5)}ms`);
+    const t6 = this.now();
+    const reviewHighlights = this.buildReviewHighlights(p);
+    if (this.debugTiming) this.logger.log(`[timing] buildReviewHighlights: ${this.dur(t6)}ms`);
+
+    return { goodCheapScore, pros, cons, redFlags, summary, confidence, priceBenchmarks, decision, reviewInsights, aspects, reviewHighlights };
+  }
+
+  public async analyzeProductRich(p: ProductDTO): Promise<any> {
+    // đảm bảo có sample reviews nếu có thể (chỉ khi bật cờ auto-scrape)
+    const AUTO_SCRAPE = (process.env.GC_AUTO_SCRAPE_REVIEWS ?? 'false') === 'true';
+    if (AUTO_SCRAPE && !p.reviewsSample?.length) {
+      this.logger.log(`analyzeProductRich: auto-scrape enabled, try extractReviews source=${p.source} url=${p.finalUrl}`);
+      const extra = await this.reviewsService.extractReviews(p);
+      this.logger.log(`analyzeProductRich: extractedReviews=${extra?.length || 0}`);
+      if (extra?.length) p.reviewsSample = extra;
+    }
+
+    const t0 = this.now();
+    const base = await this.analyzeProduct(p); // gồm pros/cons/summary/decision/confidence/redFlags
+    if (this.debugTiming) this.logger.log(`[timing] analyzeProduct(base): ${this.dur(t0)}ms`);
+    const t1b = this.now();
+    const aspectsRaw = await this.buildAspects(p);
+    if (this.debugTiming) this.logger.log(`[timing] buildAspects(rich): ${this.dur(t1b)}ms`);
+    const required = this.getRequiredAspects(p);
+
+    const nowIso = new Date().toISOString();
+    const rawUrl: string | undefined = (p as any).canonicalUrl || p.finalUrl;
+    let evidence = rawUrl ? [{
+      id: 'prod:page',
+      type: 'productPage',
+      url: rawUrl,
+      snippet: (p as any).tagline || p.description || p.title || undefined,
+      collectedAt: nowIso,
+      reliability: 0.35,
+    }] : [] as Array<{ id:string; type:string; url:string; snippet?:string; collectedAt:string; reliability:number }>;
+    // Fallback: đảm bảo luôn có ít nhất 1 evidence để evidenceIds không rỗng
+    if (!evidence.length) {
+      const fallbackUrl = this.sanitizeUrl(p.finalUrl) || p.finalUrl || 'unknown';
+      evidence = [{
+        id: 'prod:page',
+        type: 'productPage',
+        url: fallbackUrl,
+        snippet: p.description || p.title || undefined,
+        collectedAt: nowIso,
+        reliability: 0.2,
+      }];
+    }
+    const host = (() => { try { if (!rawUrl) return undefined; const u = new URL(rawUrl); const h = u.hostname.split('.'); return h[h.length-2]; } catch { return undefined; } })();
+    const product = {
+      title: p.title,
+      canonicalUrl: rawUrl,
+      buyUrl: rawUrl,
+      images: Array.isArray((p as any).images) ? (p as any).images.slice(0,1).map((url: string)=>({ url })) : [],
+      ontology: ((p as any).category || (p as any).subCategory) ? { category: (p as any).category, subCategory: (p as any).subCategory } : undefined,
+    };
+
+    const aiAnalysis = {
+      citations: evidence.length ? [{ evidenceId: 'prod:page', reliability: 0.35, note: 'Nguồn tham chiếu' }] : [],
+      confidence: { value: evidence.length === 1 ? 0.45 : 0.5, drivers: ['sources=' + evidence.length, 'independent=' + 0] },
+      tone: base.pros.length > base.cons.length ? 'balanced-positive' : 'neutral',
+    } as const;
+
+    // Rubric: nếu audio → theo mẫu; ngược lại phân đều
+    const rubricWeights: Record<string, number> = {};
+    if (required.length) {
+      Object.assign(rubricWeights, { soundQuality: 0.25, battery: 0.15, micCall: 0.15, noiseControl: 0.1, comfortFit: 0.1, durability: 0.1, connectivity: 0.1, warrantySupport: 0.05 });
+    } else {
+      const names = (aspectsRaw || []).map((a: any)=>a.name || 'overview');
+      const w = names.length ? 1/names.length : 0;
+      for (const n of names) rubricWeights[n] = Math.round(w*100)/100;
+    }
+    const rubric = { weights: rubricWeights, scoringScale: '0-5' as const, formula: 'overall = SUM((score/5)*weight) * 100' };
+
+    const extractHypotheses = (items: string[], kind: 'pro'|'con') => {
+      const hy: Array<{ text: string; kind: 'pro'|'con' }> = [];
+      const rest: string[] = [];
+      for (const t of items || []) {
+        if (/\(có thể\)/i.test(t)) hy.push({ text: t.replace(/\s*\(có thể\)/ig, '').trim(), kind });
+        else rest.push(t);
+      }
+      return { hy, rest };
+    };
+    const toRich = (a: any) => {
+      const pros = Array.isArray(a.pros) ? a.pros : [];
+      const cons = Array.isArray(a.cons) ? a.cons : [];
+      const { hy: hyPro, rest: prosClean } = extractHypotheses(pros, 'pro');
+      const { hy: hyCon, rest: consClean } = extractHypotheses(cons, 'con');
+      const hypotheses = [...hyPro, ...hyCon];
+      return {
+        name: a.name,
+        label: a.name === 'Tổng quan' || a.name === 'overview' ? 'Tổng quan' : undefined,
+        prosDetailed: prosClean.map((t: string)=>({ text: t, evidenceIds: ['prod:page'] })),
+        consDetailed: consClean.map((t: string)=>({ text: t, evidenceIds: ['prod:page'] })),
+        hypotheses: hypotheses.length ? hypotheses : undefined,
+        quotes: [
+          ...((a.positiveQuotes || []).map((q: string)=>({ text: q, evidenceId: 'prod:page' }))),
+          ...((a.negativeQuotes || []).map((q: string)=>({ text: q, evidenceId: 'prod:page' }))),
+        ],
+      };
+    };
+    const aspectsList = (aspectsRaw || []).map(toRich);
+
+    // thêm "overview" đầu tiên nếu chưa có
+    const hasOverview = aspectsList.some(x => x.name === 'overview' || x.label === 'Tổng quan' || x.name === 'Tổng quan');
+    if (!hasOverview) {
+      aspectsList.unshift({
+        name: 'overview',
+        label: 'Tổng quan',
+        prosDetailed: (base.pros || []).slice(0,2).map(t=>({ text: t, evidenceIds: ['prod:page'] })),
+        consDetailed: (base.cons || []).slice(0,1).map(t=>({ text: t, evidenceIds: ['prod:page'] })),
+        fitFor: base.decision?.verdict === 'buy' ? ['nghe gọi cơ bản, ngân sách thấp'] : undefined,
+        quotes: evidence.length && (evidence[0] as any).snippet ? [{ text: (evidence[0] as any).snippet, evidenceId: 'prod:page' }] : [],
+      } as any);
+    }
+
+    // Scoring theo pros/cons count (heuristic) và Decision map ngưỡng
+    const analysisWeights = {
+      overview: 0.15,
+      soundQuality: 0.25,
+      battery: 0.15,
+      micCall: 0.15,
+      noiseControl: 0.10,
+      comfortFit: 0.08,
+      durability: 0.05,
+      connectivity: 0.05,
+      warrantySupport: 0.02,
+    } as const;
+    const aspectScores100 = aspectsList.map(it => ({
+      name: it.name,
+      score: it.prosDetailed.length > it.consDetailed.length ? Math.round((it.prosDetailed.length - it.consDetailed.length) * 10) : null,
+      reasons: (() => {
+        const reasons: string[] = [];
+        if (it.prosDetailed.length) reasons.push('Có điểm cộng cụ thể.');
+        if (it.consDetailed.length) reasons.push('Tồn tại hạn chế.');
+        return reasons.length ? reasons : undefined as any;
+      })(),
+      evidenceIds: ['prod:page']
+    }));
+    // Đảm bảo tất cả các khía cạnh bắt buộc đều có mặt trong aspectScores100
+    const requiredAspectNamesForMapping = Object.keys(analysisWeights);
+    for (const name of requiredAspectNamesForMapping) {
+      if (!aspectScores100.some(aspect => aspect.name === name)) {
+        aspectScores100.push({
+          name,
+          score: null,
+          reasons: undefined,
+          evidenceIds: ['prod:page']
+        });
+      }
+    }
+
+    const overall = Math.round(
+      aspectScores100.reduce((s, it) => {
+        const sc = typeof it.score === 'number' && it.score != null ? it.score : 50; // 0..100
+        const w = (analysisWeights as any)[it.name] ?? 0;
+        return s + (sc/100) * w;
+      }, 0) * 100
+    );
+    const decisionByScore = overall >= 75 ? 'buy' : overall >= 60 ? 'consider' : 'hold';
+    const verdict = decisionByScore as 'buy'|'consider'|'hold';
+    const reasons = [
+      `Điểm tổng ~${overall}.`,
+      evidence.length ? `Nguồn: ${host || 'site'}` : 'Thiếu nguồn tham chiếu độc lập',
+    ];
+    const decision = {
+      strategy: required.length ? 'optimistic_budget' : 'generic',
+      verdict,
+      reasons,
+      cta: { headline: verdict === 'buy' ? 'Đáng mua nếu phù hợp nhu cầu' : verdict === 'consider' ? 'Đáng cân nhắc' : 'Nên chờ thêm dữ liệu' }
+    };
+
+    // analysis block (tinh gọn)
+    const analysis = {
+      deepDive: required.length ? {
+        battery: base.cons.find((c:string)=>/giờ nghe|pin|240h/i.test(c)) ? [base.cons.find((c:string)=>/giờ nghe|pin|240h/i.test(c))!] : undefined,
+        soundQuality: base.cons.find((c:string)=>/codec|aptx|ldac/i.test(c)) ? [base.cons.find((c:string)=>/codec|aptx|ldac/i.test(c))!] : undefined,
+        connectivity: base.pros.find((c:string)=>/5\.3|kết nối|bluetooth/i.test(c)) ? [base.pros.find((c:string)=>/5\.3|kết nối|bluetooth/i.test(c))!] : undefined,
+      } : undefined,
+      knownUnknowns: base.redFlags?.length ? base.redFlags : undefined,
+      summary: base.summary,
+    };
+
+    // Pricing (nếu có)
+    const listPrice = (p as any).listPrice ?? undefined;
+    const currentPrice = p.price ?? undefined;
+    const pricing = {
+      current: currentPrice ?? null,
+      original: listPrice ?? null,
+      discountPercent: (currentPrice != null && listPrice && listPrice > 0) ? Math.round((1 - currentPrice / listPrice) * 100) : null,
+      priceHistory: currentPrice ? [{ ts: nowIso, price: currentPrice, sourceId: 'prod:page' }] : []
+    };
+
+    // Actions / Trust / TL;DR
+    const actions = { buyUrl: rawUrl, alerts: [] as any[] };
+    const trustBadges = { urlSanitized: !!rawUrl };
+    const tldr = { bestFor: verdict === 'buy' ? ['nghe gọi cơ bản, ngân sách thấp'] : undefined };
+
+    // data integrity
+    const issues: any[] = [];
+    if (!rawUrl || rawUrl !== this.sanitizeUrl(rawUrl)) issues.push({ code: 'url_unsanitized', severity: 'low', message: 'URL chưa được chuẩn hoá hoàn toàn.' });
+    if (!evidence.length) issues.push({ code: 'evidence_missing', severity: 'high', message: 'Thiếu evidence prod:page.' });
+    if (!hasOverview) issues.push({ code: 'aspects_missing_overview', severity: 'medium', message: 'Thiếu overview.' });
+    const baseVerdict = base?.decision?.verdict as string | undefined;
+    if (baseVerdict && baseVerdict !== verdict) issues.push({ code: 'verdict_signal_divergence', severity: 'low', message: `Gemini verdict=${baseVerdict} khác score verdict=${verdict}.` });
+    const presentAspects = aspectsList.map(a=>a.name);
+    const dataIntegrity = { status: issues.length ? 'warning' : 'ok', issues, coverage: required.length ? { requiredAspects: required, presentAspects, filledKeySpecsPercent: (p.specs && Object.keys(p.specs).length) ? Math.min(100, Math.round(Object.keys(p.specs).length / 10 * 100)) : 0 } : undefined } as any;
+
+    // tổng hợp
+    const meta = {
+      platform: p.source,
+      productId: p.productId ?? undefined,
+      locale: 'vi-VN',
+      currency: p.currency ?? 'VND',
+      fetchedAt: nowIso,
+    } as const;
+    const normalized = { canonicalUrl: rawUrl, buyUrl: rawUrl };
+    const productOut = {
+      rawTitle: p.title,
+      title: p.title,
+      lang: 'vi',
+      images: (p.images || []).slice(0, 1).map(url => ({ url })),
+      keySpecs: p.specs ?? {},
+      availability: undefined,
+    } as any;
+    const seller = {
+      shopId: p.shopId ?? null,
+      shopName: p.shopName ?? null,
+      rating: { avg: p.ratingAvg ?? null, count: p.reviewCount ?? null },
+      location: null,
+      policies: undefined,
+    } as any;
+
+    // Cautions đơn giản theo redFlags/marketing
+    const cautions = [] as Array<{ code: string; message: string; evidenceIds: string[] }>;
+    const txt = (p.description || p.title || '').toLowerCase();
+    if (/ai\s*(noise|cancel)/i.test(txt)) {
+      cautions.push({ code: 'marketing_overclaim', message: 'Tuyên bố AI chưa có thông số kiểm chứng.', evidenceIds: ['prod:page'] });
+    }
+
+    // Map aspects score sang thang 0..100 và lý do
+    const aspectScoresSafe = aspectScores100.map(it => ({
+      ...it,
+      evidenceIds: (Array.isArray((it as any).evidenceIds) && (it as any).evidenceIds.length) ? (it as any).evidenceIds : ['prod:page']
+    }));
+    // Đảm bảo tất cả các khía cạnh bắt buộc đều có mặt trong aspectScoresSafe
+    const requiredAspectNamesForMapping2 = Object.keys(analysisWeights);
+    for (const name of requiredAspectNamesForMapping2) {
+      if (!aspectScoresSafe.some(aspect => aspect.name === name)) {
+        aspectScoresSafe.push({
+          name,
+          score: null,
+          reasons: undefined,
+          evidenceIds: ['prod:page']
+        });
+      }
+    }
+
+    const overallScore = (() => {
+      const sum = aspectScoresSafe.reduce((s, it) => {
+        const sc = typeof it.score === 'number' && it.score != null ? it.score : 50; // 0..100
+        const w = (analysisWeights as any)[it.name] ?? 0;
+        return s + (sc/100) * w;
+      }, 0);
+      return Math.round(sum * 100);
+    })();
+
+    const rich = {
+      schemaVersion: '1.1.0',
+      meta,
+      normalized,
+      product: productOut,
+      seller,
+      pricing,
+      evidence,
+      relatedMedia: [],
+      analysis: {
+        rubric: { weights: analysisWeights },
+        aspectScores: aspectScoresSafe,
+        overallScore,
+        verdict: overallScore >= 75 ? 'buy' : overallScore >= 60 ? 'consider' : 'hold',
+        confidence: { value: evidence.length === 1 ? 0.45 : 0.5, drivers: ['sources=' + evidence.length] },
+        pros: (base.pros || []).slice(0, 4).map(t => ({ text: t, evidenceIds: ['prod:page'] })),
+        cons: (base.cons || []).slice(0, 4).map(t => ({ text: t, evidenceIds: ['prod:page'] })),
+        cautions,
+        alternatives: [],
+      },
+      dataIntegrity,
+      trace: {
+        pipelineVersion: new Date(nowIso).toISOString().slice(0, 10).replace(/-/g, '.'),
+        latencyMs: undefined,
+        cache: { hit: false },
+      },
+    };
+
+    return rich;
+  }
+
+  private sanitizeUrl(input?: string): string | undefined {
+    if (!input) return undefined;
+    try {
+      const u = new URL(input);
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return input; // TODO(verify): có thể log cảnh báo URL không hợp lệ
+    }
   }
 }

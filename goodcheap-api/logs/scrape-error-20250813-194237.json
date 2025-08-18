@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "reason": "exception",
+  "message": "Error reading storage state from storageState.json:\nENOENT: no such file or directory, open 'D:\\goodcheap\\goodcheap-api\\storageState.json'",
+  "stack": "Error: ENOENT: no such file or directory, open 'D:\\goodcheap\\goodcheap-api\\storageState.json'"
+}

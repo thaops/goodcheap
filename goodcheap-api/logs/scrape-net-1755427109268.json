@@ -1,0 +1,177 @@
+{
+  "url": "https://www.tiktok.com/view/product/1731258101485700534?_svg=1&checksum=da76889e710c5eb4675fc582ea659ae8fc47cb55bbd99cf2d37cb1cb3b7433fc&encode_params=MIIBUwQMpD8DbVObyHCs5XR8BIIBL1YB-8VHve8Btu6Lue1j1H5eKyoB9z-kaABPyf7MYO2FQ33TMLMNy25uEa0CQmb9QulLrEx_Oy0QhP6mj8sUlWAeOwtAtlG8qS32d78pDb1oJ35CNQAeXao-ByrLOs9_c48ahVLIzkH2VSJr6iglXj-Y9KH3E-Qr_I_ZAfcZsU9Do4FTw8DAkuDvPxP-Cghzg7wzRsEc-prw_HfsTiEM17UULYjHtzY7o0ng37nM4cYyUpijnnnsZv2VMR2xwEQXnuLczpqkZzYk9I_Gd7vuc2g3rR0O9DLyrtYqY-qBm3k6mg0S5dvFvk8-bQw_4OYliSzyOdmjsHBV9wxg52sCvIIzn1wBCpNTn3dwor-yq4_ZX9LoLPRfbz1kWYWtcmNKBJ2B-3lMUH9xTpBdaKzRCwQQRnpcOreXG1pcqgjU4r6DiA%3D%3D&og_info=%7B%22title%22%3A%22%5BDEAL+HOT%5D+S%E1%BB%AFa+r%E1%BB%ADa+m%E1%BA%B7t+gi%E1%BA%A3m+m%E1%BB%A5n+CeraVe+Blemish+Control+Cleanser+236ml.+S%E1%BB%AFa+r%E1%BB%ADa+m%E1%BA%B7t+d%E1%BB%8Bu+nh%E1%BA%B9+gi%C3%BAp+l%C3%A0m+s%E1%BA%A1ch+b%C3%A3+nh%E1%BB%9Dn+d%C6%B0+th%E1%BB%ABa%2C+gi%C3%BAp+gi%E1%BA%A3m+m%E1%BB%A5n%2C+kh%C3%B4ng+l%C3%A0m+t%E1%BB%95n+th%C6%B0%C6%A1ng+h%C3%A0ng+r%C3%A0o+b%E1%BA%A3o+v%E1%BB%87+da.+D%C3%99NG+CHO+DA+M%E1%BA%B6T_+Ch%C4%83m+s%C3%B3c+da_Skincare+cho+Nam+v%C3%A0+N%E1%BB%AF_Cleansing%22%2C%22image%22%3A%22https%3A%5C%2F%5C%2Fp16-oec-sg.ibyteimg.com%5C%2Ftos-alisg-i-aphluv4xwc-sg%5C%2F8d55a7c8305c4e11bf330dfd21949e12~tplv-aphluv4xwc-resize-webp%3A260%3A260.webp%3Fdr%3D15582%26t%3D555f072d%26ps%3D933b5bde%26shp%3D7745054a%26shcp%3D9b759fb9%26idc%3Dmy%26from%3D2001012042%22%7D&sec_user_id=MS4wLjABAAAAoF7-Ki4iz4wWXJMvksmQXJlKi86c6puleSHsnaCrnLvgYylptyHWuNOlW34ozhOc&share_app_id=1180&share_iid=7537939830702311186&share_link_id=e5f27938-d94a-491b-8f07-adebdb6a9001&social_share_type=15&timestamp=1755071301&trackParams=%7B%22traffic_source_list%22%3A%5B6%2C2%5D%2C%22enable_shop_tab_popup%22%3A1%2C%22device_id%22%3A%227421198315108795910%22%7D&u_code=dmi2d786g1j20h&ug_btm=b0482%2Cb2878&ugbiz_name=UNKNOWN&unique_id=dyrlpwn9rrte&user_id=7051851862735209498&utm_campaign=client_share&utm_medium=android&utm_source=more",
+  "count": 2,
+  "items": [
+    {
+      "url": "https://api-verification-alisg.tiktokshop.com/vc/setting?aid=0",
+      "json": {
+        "common": {
+          "retry_interval": 2000,
+          "rgb": "000000",
+          "use_native_report": 0,
+          "host": {
+            "cn": "",
+            "in": "https://api-verification-useast2a.tiktokshop.com/",
+            "sg": "https://api-verification-alisg.tiktokshop.com/",
+            "ttp": "https://api-verification-useast5.tiktokshops.us/",
+            "ttp2": "https://api-verification-useast8.tiktokshops.us/",
+            "va": "https://api-verification-useast1a.tiktokshop.com/"
+          },
+          "skip_launch": 1,
+          "collection_duration": 150,
+          "request_encrypt": 0,
+          "use_dialog_size_v2": 1,
+          "use_jsb_request": 0,
+          "period": 5000,
+          "retry_count": 1,
+          "back_up_host": {
+            "sg": "https://oec-api.tiktokv.com/",
+            "ttp": "https://oec-api.tiktokv.com/",
+            "ttp2": "https://oec-api.tiktokv.com/",
+            "va": "https://oec-api.tiktokv.com/",
+            "cn": "",
+            "in": "https://oec-api.tiktokv.com/"
+          },
+          "pre_create": 0,
+          "alpha": "0.5"
+        },
+        "qa": {
+          "url": {
+            "sg": "",
+            "va": "",
+            "cn": ""
+          },
+          "width": 300,
+          "height": 318,
+          "host": {
+            "cn": "",
+            "sg": "",
+            "va": ""
+          }
+        },
+        "self_unpunish": {
+          "width": 0,
+          "height": 0,
+          "host": {
+            "cn": "",
+            "sg": "",
+            "va": ""
+          },
+          "url": {
+            "cn": "",
+            "sg": "",
+            "va": ""
+          }
+        },
+        "sms": {
+          "height": 0,
+          "host": {
+            "sg": "",
+            "va": "",
+            "cn": ""
+          },
+          "url": {
+            "va": "",
+            "cn": "",
+            "sg": ""
+          },
+          "width": 0
+        },
+        "verify": {
+          "host": {
+            "ttp2": "https://api-verification-useast8.tiktokshops.us/",
+            "va": "https://api-verification-useast1a.tiktokshop.com/",
+            "cn": "",
+            "in": "https://api-verification-useast2a.tiktokshop.com/",
+            "sg": "https://api-verification-alisg.tiktokshop.com/",
+            "ttp": "https://api-verification-useast5.tiktokshops.us/"
+          },
+          "js": {
+            "ttp2": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp2/3.0.49/2.0.0.518/captcha.js",
+            "va": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/va/3.0.49/1.0.0.601/captcha.js",
+            "in": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/in/3.0.49/1.0.0.601/captcha.js",
+            "sg": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/sg/3.0.49/1.0.0.601/captcha.js",
+            "ttp": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp/3.0.49/2.0.0.518/captcha.js"
+          },
+          "back_up_host": {
+            "sg": "https://api-verification-alisg.tiktokshop.com/",
+            "ttp": "https://api-verification-useast5.tiktokshops.us/",
+            "ttp2": "https://api-verification-useast8.tiktokshops.us/",
+            "va": "https://api-verification-useast1a.tiktokshop.com/",
+            "cn": "",
+            "in": "https://api-verification-useast2a.tiktokshop.com/"
+          },
+          "gray_js_v2": {
+            "in": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/in/3.0.49/1.0.0.601/captcha.js",
+            "sg": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/sg/3.0.49/1.0.0.601/captcha.js",
+            "ttp": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp/3.0.49/2.0.0.518/captcha.js",
+            "ttp2": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp2/3.0.49/2.0.0.518/captcha.js",
+            "va": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/va/3.0.49/1.0.0.601/captcha.js"
+          },
+          "url": {
+            "va": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/va/3.0.49/1.0.0.601/index.html",
+            "in": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/in/3.0.49/1.0.0.601/index.html",
+            "sg": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/sg/3.0.49/1.0.0.601/index.html",
+            "ttp": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp/3.0.49/2.0.0.518/index.html",
+            "ttp2": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp2/3.0.49/2.0.0.518/index.html"
+          },
+          "gray_url": {
+            "in": "",
+            "sg": "",
+            "ttp": "",
+            "ttp2": "",
+            "va": ""
+          },
+          "back_up_js_v2": {
+            "in": [
+              "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/in/3.0.49/1.0.0.601/captcha.js"
+            ],
+            "sg": [
+              "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/sg/3.0.49/1.0.0.601/captcha.js"
+            ],
+            "ttp": [
+              "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp/3.0.49/2.0.0.518/captcha.js"
+            ],
+            "ttp2": [
+              "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp2/3.0.49/2.0.0.518/captcha.js"
+            ],
+            "va": [
+              "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/va/3.0.49/1.0.0.601/captcha.js"
+            ]
+          },
+          "gray_js": {
+            "ttp2": "",
+            "va": "",
+            "in": "",
+            "sg": "",
+            "ttp": ""
+          },
+          "height": 303,
+          "js_v2": {
+            "ttp": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp/3.0.49/2.0.0.518/captcha.js",
+            "ttp2": "https://lf16-cdn-tos.tiktokcdn-us.com/obj/static-tx/oec-captcha-ttweb/captcha/ttp2/3.0.49/2.0.0.518/captcha.js",
+            "va": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/va/3.0.49/1.0.0.601/captcha.js",
+            "in": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/in/3.0.49/1.0.0.601/captcha.js",
+            "sg": "https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/oec-captcha-ttweb/captcha/sg/3.0.49/1.0.0.601/captcha.js"
+          },
+          "width": 300
+        },
+        "setting_version": {
+          "va": "3.0.49-1.0.0.601",
+          "sg": "3.0.49-1.0.0.601",
+          "in": "3.0.49-1.0.0.601",
+          "ttp": "3.0.49-2.0.0.518",
+          "ttp2": "3.0.49-2.0.0.518"
+        }
+      }
+    },
+    {
+      "url": "https://api-verification-alisg.tiktokshop.com/captcha/get?lang=en&app_name=&h5_sdk_version=3.0.49&h5_sdk_use_type=cdn&sdk_version=1.0.18&iid=0&did=0&device_id=0&ch=web_text&aid=0&os_type=3&mode=&tmp=1755427103043&platform=h5&webdriver=true&shark_log_id=20250817183821DA2D1DF2DDBD6AE1A550&refer_path=%2Fview%2Fproduct%2F1731258101485700534&fp=verify_mefjz0ki_SI3OVfIb_VZ1m_4SG5_AbU4_pn3r6c1igiLQ&type=verify&detail=MTgstmaobiKV61yJvdPwgujJ3tt8TIJYjtSqCp6KcYladFxj8fyxyXMpiSgPYCRpa1We*lYWHhpSR7IWGecsKMYiRxbVN4x4jn6hmELCoWKiU2TC2*N6hxR7vblKYgsuxfAx*prqZRhZADuc66HAy-nguao7u2Xxr7-BLGTu52vf9PLBFwM-8WIE2U5IM6aG5udvNws21fUgoNfaFO1kbQTyqQ0mltubgSCcM2a2UDcDgzrLNIKQ*hHr0XKEpF*-xYp4vXJA9PO2kaEa81XvK4bk89asYKt817s*fh-jL1nIHCeVlRXiD52KAhdGs8PdsZs0koxvzPRDEBoURtT9CxUFboNBykX55j4KjKVwh7e5ewhJ8SREtC2*H1iTxwG32ow3lW5oGzzE*tEazDdm0meuRJMHjNzBTTIUxqIy-3UICce7XxADYTJTb9LAbUGShJuoIyJd0eaFXaM13OMgJ5VuoERtGy4Bigay9lJfq9gmb4VxU5J3seCFRjZzLk0CbQ4dK2gLGTZgTNWaEIpS5h-YeerVzjjs643zhsHK4naOLIBhUjAXdr45C5jKfu3b-KBGwwgWiimfY2zTamvDFW2iiRfDv6GzCSGZxtvb*DDV-vcAf1WEXsvG6iQ*puPy8EfTe6qjCCqGop99u3ZY25YUceDk4rDZFKALgu3LCZLuzEE5EmZ7MYRIuX34Z635VlpurZ8J-oF2WUj0iHIwRMmN4Q8AjgByioQBeYreSaetpv7Q4jI93xKyR8q2*8kN8C3Zua1GSbqwm6sM50icpsWzLoTj3Zj48YYKrsiEaY7wi7npjmAKfG*tJzB53gyrT7Xh5j2I82*dEZ0So72nBNYVMMk-JFzlc5vl07A9wDZ*1phnQl4s3G8oScObtcBNS9jalDgU*88KTGN-9mRjCYAGnct3d9hxZJoBDSQVp*YiyBeZYdCNQvcQrearavCbMRRB9ef0BTljEW3naqmJ227Xq6G0RFiqxA..&server_sdk_env=%7B%22idc%22:%22my%22,%22region%22:%22ALISG%22,%22server_type%22:%22business%22%7D&subtype=slide&challenge_code=3058&os_name=iOS&h5_check_version=1.0.18&capa-data-ss=1&ec1O2tVb=o0eNldpP",
+      "json": {
+        "code": 200,
+        "data": "rAAUAByPzzzOtHAuigDXNPymfrqG1Y4RF1vXZU1sdDoLqvY51s5GlfFSbh62fe9l/S3Q4XBxu1Y6HwisyR9tmvT43Mf01MOVsV6zjXF15ALnUNXj1nM2D2n/8FZ+UECxgOo+AViKTen5YXXz6Z59yG3bXPa5880T4bRttlrHYk+ijoRvXwUBckVtve7zpslU4+rJ1FZxY6rtrXStaBxA3BIP1BI4BkAZpB2vWOzt1yq8bYpMnPuH46sL7oW6neT1fO4KK+g6x5jXQRAkkJ+YGVdBSe+Dl8zVhjBASFAMKjJRY27qi+Sp43FhrCi6ofkIW4A9qv1z4w0qqBVumpVJla8dbFi5QJnJejDAb04MU+/9po1yr1Rx8Xihxo+89bABEJ/KpjgW2sz894ig8htz3BT4p/5Gqf1ftlp+Fa4a5GXjaZee+5HrEIDCqhS8ssTZGcB5BdZNBXcZ7H9Sj2oOWaK8GQY9Muvf+A12hLezWHorr/3WYeJD4tHpg5i0o1Os60v9EnpVOvP/XbMxNvfzH9mkEyU9p+VQge1676BG4Cx1KRgZyyGNImmGyPjGfvpyry5dyOSBWl0P8ocYq+diJS+5nGHHZszjC9aw+Qbep7HjzrDtT+/vsE6qLGt7D3FPh0xUrQuhZNrliwlI9z6H8XJS1DSGtTMYOkH0JXVKoTw9W653QoA2Dr6VnTv9GvTEFYYeXovBuVffd7JGmioMOqJ9+60H1hbDcivaDz7GvDl/NcGGA/m+VjeYrjFhuuEt6mVIU3WQ/y6tGwZB3ByMxlj8qEh/r/HKlz06NQ8F6FPPMNMemjCtpHRDwDmP+FLhAYui0P60AL+Cce8XeQ06lz5ymFhEQkr6dIBbcJX/9BPVtOYdn1aB5d83+33kp56wl7YYu0CaG83MJH/VMc2pqSw9PFmzPhxFm0QGTCZljnfN4BAoqGSKuuIwHN68aSj60Beaxoz/ciiOWTPoVQdZW9cq8c0BuIE8Njiw/x3bibr7PJbs/zMxUt0PsqHZZJptMRVe1K0IkJn5PZ6leknXPmCBX4T7HXswyUBF9GFvu2II/WDR",
+        "message": "Verification complete"
+      }
+    }
+  ]
+}
