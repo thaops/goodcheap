@@ -19,6 +19,7 @@ const analyze_service_1 = require("./analyze.service");
 const commerceReviewResponse_schema_1 = require("../common/schemas/commerceReviewResponse.schema");
 const common_2 = require("@nestjs/common");
 const evidence_aggregator_interface_1 = require("../common/interfaces/evidence-aggregator.interface");
+const swagger_1 = require("@nestjs/swagger");
 let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
     analyze;
     unfurl;
@@ -521,6 +522,29 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
 };
 exports.AnalyzeController = AnalyzeController;
 __decorate([
+    (0, swagger_1.ApiBody)({
+        description: 'Cung cấp một trong hai: url (kèm html tùy chọn) hoặc product đã được unfurl',
+        required: true,
+        schema: {
+            oneOf: [
+                {
+                    type: 'object',
+                    properties: {
+                        url: { type: 'string', format: 'uri', example: 'https://vt.tiktok.com/...' },
+                        html: { type: 'string', description: 'Tùy chọn: raw HTML TikTok để enrich nhanh' },
+                    },
+                    required: ['url'],
+                },
+                {
+                    type: 'object',
+                    properties: {
+                        product: { type: 'object', description: 'Đối tượng ProductDTO đã có sẵn thông tin' },
+                    },
+                    required: ['product'],
+                },
+            ],
+        },
+    }),
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -528,6 +552,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AnalyzeController.prototype, "analyzeUrl", null);
 exports.AnalyzeController = AnalyzeController = AnalyzeController_1 = __decorate([
+    (0, swagger_1.ApiTags)('analyze'),
     (0, common_1.Controller)('analyze'),
     __param(1, (0, common_1.Inject)('UnfurlService')),
     __param(2, (0, common_1.Inject)('ResponseMapper')),

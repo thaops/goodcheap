@@ -1,11 +1,29 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
   const config = app.get(ConfigService);
   const startPort = Number(config.get('PORT') ?? 3000);
+
+  // Swagger setup (configurable via .env)
+  const swaggerEnabled = String(config.get('SWAGGER_ENABLE') ?? '1') === '1';
+  if (swaggerEnabled) {
+    const swaggerPath = String(config.get('SWAGGER_PATH') ?? 'docs').replace(/^\/+/, '');
+    const title = String(config.get('SWAGGER_TITLE') ?? 'GoodCheap API');
+    const description = String(config.get('SWAGGER_DESCRIPTION') ?? 'API documentation');
+    const version = String(config.get('SWAGGER_VERSION') ?? '1.0');
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle(title)
+      .setDescription(description)
+      .setVersion(version)
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup(swaggerPath, app, document);
+    console.log(`Swagger UI available at /${swaggerPath}`);
+  }
 
   // Try binding to startPort; if EADDRINUSE, increment up to 10 attempts
   let bound = false;

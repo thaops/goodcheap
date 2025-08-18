@@ -16,6 +16,7 @@ exports.VideoController = void 0;
 const common_1 = require("@nestjs/common");
 const zod_1 = require("zod");
 const gemini_service_1 = require("../ai/gemini.service");
+const swagger_1 = require("@nestjs/swagger");
 let VideoController = class VideoController {
     ai;
     unfurl;
@@ -64,6 +65,18 @@ let VideoController = class VideoController {
 };
 exports.VideoController = VideoController;
 __decorate([
+    (0, swagger_1.ApiBody)({
+        description: 'Tìm video review liên quan theo title hoặc finalUrl (có thể set max 1..10)',
+        required: true,
+        schema: {
+            type: 'object',
+            properties: {
+                title: { type: 'string', example: 'Apple AirPods Pro 2' },
+                finalUrl: { type: 'string', format: 'uri', example: 'https://www.apple.com/airpods-pro/' },
+                max: { type: 'integer', minimum: 1, maximum: 10, example: 5 },
+            },
+        },
+    }),
     (0, common_1.Post)('search'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -71,6 +84,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], VideoController.prototype, "search", null);
 exports.VideoController = VideoController = __decorate([
+    (0, swagger_1.ApiTags)('video'),
     (0, common_1.Controller)('video'),
     __param(0, (0, common_1.Inject)('GeminiService')),
     __param(1, (0, common_1.Inject)('UnfurlService')),

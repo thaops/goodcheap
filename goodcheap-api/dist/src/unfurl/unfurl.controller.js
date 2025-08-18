@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UnfurlController = void 0;
 const common_1 = require("@nestjs/common");
 const unfurl_service_1 = require("./unfurl.service");
+const swagger_1 = require("@nestjs/swagger");
 let UnfurlController = class UnfurlController {
     unfurl;
     constructor(unfurl) {
@@ -26,6 +27,17 @@ let UnfurlController = class UnfurlController {
 };
 exports.UnfurlController = UnfurlController;
 __decorate([
+    (0, swagger_1.ApiBody)({
+        description: 'URL của trang sản phẩm cần unfurl',
+        required: true,
+        schema: {
+            type: 'object',
+            properties: {
+                url: { type: 'string', format: 'uri', example: 'https://www.tiktok.com/...' },
+            },
+            required: ['url'],
+        },
+    }),
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)('url')),
     __metadata("design:type", Function),
@@ -33,6 +45,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UnfurlController.prototype, "unfurlUrl", null);
 exports.UnfurlController = UnfurlController = __decorate([
+    (0, swagger_1.ApiTags)('unfurl'),
     (0, common_1.Controller)('unfurl'),
     __metadata("design:paramtypes", [unfurl_service_1.UnfurlService])
 ], UnfurlController);

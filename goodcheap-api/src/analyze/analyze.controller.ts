@@ -10,7 +10,9 @@ import type { EvidenceValidatorInterface } from '../common/interfaces/evidence-v
 import type { ReviewsInterface } from '../common/interfaces/reviews.interface';
 import { EVIDENCE_AGGREGATOR_TOKEN } from '../common/interfaces/evidence-aggregator.interface';
 import type { EvidenceAggregatorInterface } from '../common/interfaces/evidence-aggregator.interface';
+import { ApiTags, ApiBody } from '@nestjs/swagger';
 
+@ApiTags('analyze')
 @Controller('analyze')
 export class AnalyzeController {
   constructor(
@@ -35,6 +37,29 @@ export class AnalyzeController {
    *  hoặc
    * { product: ProductDTO }
    */
+  @ApiBody({
+    description: 'Cung cấp một trong hai: url (kèm html tùy chọn) hoặc product đã được unfurl',
+    required: true,
+    schema: {
+      oneOf: [
+        {
+          type: 'object',
+          properties: {
+            url: { type: 'string', format: 'uri', example: 'https://vt.tiktok.com/...' },
+            html: { type: 'string', description: 'Tùy chọn: raw HTML TikTok để enrich nhanh' },
+          },
+          required: ['url'],
+        },
+        {
+          type: 'object',
+          properties: {
+            product: { type: 'object', description: 'Đối tượng ProductDTO đã có sẵn thông tin' },
+          },
+          required: ['product'],
+        },
+      ],
+    },
+  })
   @Post()
   async analyzeUrl(@Body() body: { url?: string; product?: ProductDTO; html?: string }): Promise<any> {
     const LLM_ENABLED = (process.env.GC_ENABLE_LLM ?? 'false') === 'true';

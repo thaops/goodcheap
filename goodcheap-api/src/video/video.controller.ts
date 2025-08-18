@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { ProductDTO } from '../common/types';
 import { GeminiService } from '../ai/gemini.service';
 import type { UnfurlInterface } from '../common/interfaces/unfurl.interface';
+import { ApiTags, ApiBody } from '@nestjs/swagger';
 
+@ApiTags('video')
 @Controller('video')
 export class VideoController {
   constructor(
@@ -16,6 +18,18 @@ export class VideoController {
    * Body: { title?: string, finalUrl?: string, max?: number }
    * Trả về danh sách link video liên quan (YouTube, TikTok)
    */
+  @ApiBody({
+    description: 'Tìm video review liên quan theo title hoặc finalUrl (có thể set max 1..10)',
+    required: true,
+    schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', example: 'Apple AirPods Pro 2' },
+        finalUrl: { type: 'string', format: 'uri', example: 'https://www.apple.com/airpods-pro/' },
+        max: { type: 'integer', minimum: 1, maximum: 10, example: 5 },
+      },
+    },
+  })
   @Post('search')
   async search(@Body() body: any) {
     const schema = z.object({
