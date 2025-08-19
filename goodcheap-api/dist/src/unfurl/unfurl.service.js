@@ -22,13 +22,42 @@ let UnfurlService = class UnfurlService {
     async expandUrl(url) {
         this.ensureValidUrl(url);
         try {
+            const env = (process.env.NODE_ENV ?? '').toLowerCase();
+            if (env === 'test')
+                return url;
             const { default: got } = await import('got');
-            const res = await got(url, {
-                followRedirect: true,
+            try {
+                const headRes = await got.head(url, {
+                    headers: { 'user-agent': ua_1.UA },
+                    followRedirect: true,
+                    maxRedirects: 10,
+                    timeout: { request: 8000 },
+                    throwHttpErrors: false,
+                });
+                if (headRes && typeof headRes.url === 'string' && headRes.url.length > 0) {
+                    return headRes.url;
+                }
+            }
+            catch { }
+            const getRes = await got(url, {
                 headers: { 'user-agent': ua_1.UA },
-                timeout: { request: 10000 },
+                followRedirect: true,
+                maxRedirects: 10,
+                timeout: { request: 12000 },
             });
-            return res.url;
+            if (getRes && typeof getRes.url === 'string' && getRes.url.length > 0) {
+                return getRes.url;
+            }
+            const loc = getRes?.headers?.location;
+            if (typeof loc === 'string' && loc.length > 0) {
+                try {
+                    const base = new URL(url);
+                    const resolved = new URL(loc, base);
+                    return resolved.toString();
+                }
+                catch { }
+            }
+            return url;
         }
         catch (e) {
             const status = e?.response?.statusCode ?? 502;
@@ -37,11 +66,12 @@ let UnfurlService = class UnfurlService {
         }
     }
     detectSource(finalUrl) {
-        if (finalUrl.includes('tiktok'))
+        const u = (finalUrl || '').toLowerCase();
+        if (u.includes('tiktok'))
             return 'tiktok';
-        if (finalUrl.includes('shopee'))
+        if (u.includes('shopee'))
             return 'shopee';
-        if (finalUrl.includes('lazada'))
+        if (u.includes('lazada'))
             return 'lazada';
         return 'other';
     }

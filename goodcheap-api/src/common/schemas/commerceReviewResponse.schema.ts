@@ -14,6 +14,7 @@ export const CommerceReviewResponseSchema = z.object({
   product: z.object({
     title: z.string(),
     canonicalUrl: z.string().url(),
+    canonicalUrlClean: z.string().url().optional(),
     brand: z.string().optional(),
     category: z.string().optional(),
     attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
@@ -34,15 +35,18 @@ export const CommerceReviewResponseSchema = z.object({
       evidenceId: z.string().optional(),
     })).optional(),
   }),
-  pricing: z.object({
-    currentPrice: z.number().optional(),
-    originalPrice: z.number().optional(),
-    currency: z.string().optional(),
-    discountPct: z.number().optional(),
-    priceHistory: z.array(z.object({
-      date: z.string().date(), // ISO date format (YYYY-MM-DD)
-      price: z.number(),
-    })).optional(),
+  // Chuẩn hoá sản phẩm (brand/line/size/category/gtin/variant)
+  productNormalization: z.object({
+    brand: z.string().nullable().optional(),
+    line: z.string().nullable().optional(),
+    size: z.object({
+      value: z.number(),
+      unit: z.string(),
+    }).nullable().optional(),
+    categoryPath: z.array(z.string()).optional(),
+    gtin: z.string().nullable().optional(),
+    variantKey: z.string().nullable().optional(),
+    ingredientHash: z.string().nullable().optional(),
   }).optional(),
   availability: z.object({
     stockStatus: z.enum(['in_stock', 'low_stock', 'out_of_stock', 'preorder', 'unknown']).optional(),
@@ -59,6 +63,9 @@ export const CommerceReviewResponseSchema = z.object({
     returnWindowDays: z.number().int().optional(),
     buyerProtection: z.string().optional(),
     warranty: z.string().optional(),
+    cod: z.boolean().optional(),
+    shippingTimeDays: z.number().int().optional(),
+    freeShipThreshold: z.number().optional(),
   }).optional(),
   socialProof: z.object({
     ratingAvg: z.number().min(0).max(5).optional(),
@@ -81,6 +88,13 @@ export const CommerceReviewResponseSchema = z.object({
     source: z.enum(['platform', 'tiktok_video', 'external', 'unknown']),
     evidenceId: z.string(),
   })),
+  reviewsAggregate: z.object({
+    count: z.number().int().min(0).optional(),
+    average: z.number().min(0).max(5).optional(),
+    breakdown: z.record(z.string(), z.number().int()).optional(),
+    recentCount30d: z.number().int().min(0).optional(),
+    verifiedPurchaseRatio: z.number().min(0).max(1).optional(),
+  }).optional(),
   reviewSummary: z.object({
     topPros: z.array(z.string()).optional(),
     topCons: z.array(z.string()).optional(),
@@ -92,26 +106,20 @@ export const CommerceReviewResponseSchema = z.object({
       evidenceIds: z.array(z.string()).optional(),
     })).optional(),
   }).optional(),
-  psychology: z.object({
-    buyerDecisionScorecard: z.object({
-      trust: z.number().min(0).max(2).optional(),
-      evidence: z.number().min(0).max(2).optional(),
-      riskReversal: z.number().min(0).max(2).optional(),
-      easeToBuy: z.number().min(0).max(2).optional(),
-      urgency: z.number().min(0).max(2).optional(),
-      total: z.number().min(0).max(10).optional(),
-    }).optional(),
-    factors: z.object({
-      socialProofStrength: z.number().min(0).max(1).optional(),
-      lossAversionMitigation: z.number().min(0).max(1).optional(),
-      ambiguityMitigation: z.number().min(0).max(1).optional(),
-      urgencyScarcity: z.number().min(0).max(1).optional(),
-      abilityFriction: z.number().min(0).max(1).optional(),
-    }).optional(),
-    notes: z.array(z.string()).optional(),
+  // Psychology V2 (0-100 + signals/gaps + flags)
+  psychologyV2: z.object({
+    scorecard: z.object({
+      trust: z.object({ score: z.number().min(0).max(100), signals: z.array(z.string()).optional(), gaps: z.array(z.string()).optional() }).optional(),
+      evidence: z.object({ score: z.number().min(0).max(100), signals: z.array(z.string()).optional(), gaps: z.array(z.string()).optional() }).optional(),
+      riskReversal: z.object({ score: z.number().min(0).max(100), signals: z.array(z.string()).optional(), gaps: z.array(z.string()).optional() }).optional(),
+      easeToBuy: z.object({ score: z.number().min(0).max(100), signals: z.array(z.string()).optional(), gaps: z.array(z.string()).optional() }).optional(),
+      urgency: z.object({ score: z.number().min(0).max(100), signals: z.array(z.string()).optional(), gaps: z.array(z.string()).optional() }).optional(),
+      total: z.number().min(0).max(100).optional(),
+    }),
+    flags: z.array(z.string()).optional(),
   }).optional(),
   aiAnalysis: z.object({
-    verdict: z.enum(['buy', 'consider', 'hold', 'avoid']),
+    verdict: z.enum(['buy', 'consider', 'hold', 'avoid', 'unknown']),
     confidence: z.number().min(0).max(1),
     reasons: z.array(z.string()).optional(),
     claims: z.array(z.object({
@@ -126,19 +134,78 @@ export const CommerceReviewResponseSchema = z.object({
       reliability: z.number().min(0).max(1).optional(),
     })),
   }),
+  // Quyết định AI có giải thích (V2)
+  aiDecision: z.object({
+    verdict: z.enum(['buy', 'consider', 'avoid', 'unknown']),
+    confidence: z.number().min(0).max(100).optional(),
+    reasons: z.array(z.object({ id: z.string(), weight: z.number().min(0).max(1).optional(), detail: z.string().optional() })).optional(),
+    whatToCollectNext: z.array(z.string()).optional(),
+  }).optional(),
+  evidencePolicy: z.object({
+    countUnlinked: z.boolean(),
+  }).optional(),
   evidence: z.array(z.object({
     id: z.string(),
     type: z.enum(['productPage', 'review', 'creatorVideo', 'live', 'qna', 'shopPolicy', 'externalPage']),
-    url: z.string().url(),
+    url: z.string().url().optional(),
     reliability: z.number().min(0).max(1).optional(),
     freshnessDays: z.number().min(0).optional(),
-    scrapedAt: z.string().datetime(), // ISO date-time format
+    scrapedAt: z.string().datetime().optional(), // ISO date-time format
+    // Mở rộng evidence để gom cả video/review về 1 mảng thống nhất
+    source: z.object({ platform: z.string(), type: z.string().optional() }).optional(),
+    title: z.string().optional(),
+    lang: z.string().optional(),
+    publishedAt: z.string().date().optional(),
+    engagement: z.object({ views: z.number().int().min(0).optional(), likes: z.number().int().min(0).optional(), comments: z.number().int().min(0).optional() }).optional(),
+    author: z.object({ name: z.string().optional(), channelSubs: z.number().int().min(0).optional(), verified: z.boolean().optional() }).optional(),
+    linkedToProduct: z.boolean().optional(),
+    relevanceScore: z.number().min(0).max(1).optional(),
+    claims: z.array(z.string()).optional(),
+    sentiment: z.object({ polarity: z.enum(['pos','neu','neg']).optional(), score: z.number().min(0).max(1).optional() }).optional(),
   })).min(1),
   system: z.object({
     llm: z.string().optional(),
     llmVersion: z.string().optional(),
     latencyMs: z.number().int().optional(),
     warnings: z.array(z.string()).optional(),
+  }).optional(),
+  // Lõi marketplace bổ sung (shop/product/price)
+  marketplace: z.object({
+    shop: z.object({
+      shopId: z.string().optional(),
+      name: z.string().optional(),
+      isOfficialStore: z.boolean().optional(),
+      ratings: z.object({ avg: z.number().min(0).max(5).optional(), count: z.number().int().min(0).optional() }).optional(),
+      rating: z.number().min(0).max(5).optional(),
+      followers: z.number().int().min(0).optional(),
+      responseRate: z.number().min(0).max(100).optional(),
+      ageDays: z.number().int().min(0).optional(),
+      badges: z.array(z.string()).optional(),
+    }).optional(),
+    product: z.object({
+      ratingAvg: z.number().min(0).max(5).optional(),
+      ratingCount: z.number().int().min(0).optional(),
+      soldCount: z.union([z.number(), z.string()]).optional(),
+      ratingDist: z.record(z.string(), z.number().int()).optional(),
+      qaCount: z.number().int().min(0).optional(),
+      returnPolicy: z.string().optional(),
+      warranty: z.string().optional(),
+      shipping: z.object({ minDays: z.number().int().optional(), maxDays: z.number().int().optional(), cod: z.boolean().optional(), freeThreshold: z.number().optional() }).optional(),
+    }).optional(),
+    price: z.object({
+      list: z.number().optional(),
+      sale: z.number().optional(),
+      currency: z.string().optional(),
+      per_100ml: z.number().optional(),
+      per_100g: z.number().optional(),
+      history: z.array(z.object({ date: z.string().date(), price: z.number() })).optional(),
+      current: z.number().optional(),
+      original: z.number().optional(),
+      min: z.number().optional(),
+      max: z.number().optional(),
+      updatedAt: z.string().datetime().optional(),
+      discountPct: z.number().int().min(0).max(100).optional(),
+    }).optional(),
   }).optional(),
 });
 

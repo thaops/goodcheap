@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AnalyzeModule } from './analyze.module';
-import { CommerceReviewResponseSchema } from '../common/schemas/commerceReviewResponse.schema';
+import { AnalyzeModule } from '../src/analyze/analyze.module';
+import { CommerceReviewResponseSchema } from '../src/common/schemas/commerceReviewResponse.schema';
 
 describe('AnalyzeController (E2E)', () => {
   let app: INestApplication;

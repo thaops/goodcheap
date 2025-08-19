@@ -79,6 +79,102 @@ describe('ResponseMapper', () => {
       expect(response.evidence.length).toBeGreaterThan(0);
     });
 
+    it('should compute per_100ml when size in ml is present in title', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://www.tiktok.com/@shop/product/abc',
+        source: 'tiktok',
+        title: 'Test Product 250ml',
+        currency: 'VND',
+        price: 100000, // VND
+        images: ['https://example.com/image.jpg'],
+      } as any;
+
+      const analysis: AnalysisDTO = {
+        pros: [],
+        cons: [],
+        aspects: [],
+        decision: { verdict: 'consider' },
+      } as any;
+
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      expect(response.marketplace?.price?.per_100ml).toBe(40000); // 100000/250*100
+    });
+
+    it('should compute per_100g when size in g is present in title', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://www.tiktok.com/@shop/product/def',
+        source: 'tiktok',
+        title: 'Another Product 200g',
+        currency: 'VND',
+        price: 50000, // VND
+        images: ['https://example.com/image.jpg'],
+      } as any;
+
+      const analysis: AnalysisDTO = {
+        pros: [],
+        cons: [],
+        aspects: [],
+        decision: { verdict: 'consider' },
+      } as any;
+
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      expect(response.marketplace?.price?.per_100g).toBe(25000); // 50000/200*100
+    });
+
+    it('should NOT scale VND < 1000 for TikTok platform', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://www.tiktok.com/@shop/product/abc',
+        source: 'tiktok',
+        title: 'Low price TikTok item',
+        currency: 'VND',
+        price: 350,
+        discountPrice: 400,
+        ratingAvg: 4.2,
+        reviewCount: 20,
+        images: ['https://example.com/image.jpg'],
+      };
+
+      const analysis: AnalysisDTO = {
+        pros: [],
+        cons: [],
+        aspects: [],
+        decision: { verdict: 'consider' },
+      } as any;
+
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      expect(response.meta.platform).toBe('tiktok');
+      expect(response.marketplace?.price?.currency).toBe('VND');
+      expect(response.marketplace?.price?.sale).toBe(350);
+      expect(response.marketplace?.price?.list).toBe(400);
+    });
+
+    it('should NOT scale VND < 1000 for non-TikTok platforms as well (e.g., Shopee)', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://shopee.vn/product/xyz',
+        source: 'shopee',
+        title: 'Low price Shopee item',
+        currency: 'VND',
+        price: 350,
+        discountPrice: 400,
+        ratingAvg: 4.2,
+        reviewCount: 20,
+        images: ['https://example.com/image.jpg'],
+      };
+
+      const analysis: AnalysisDTO = {
+        pros: [],
+        cons: [],
+        aspects: [],
+        decision: { verdict: 'consider' },
+      } as any;
+
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      expect(response.meta.platform).toBe('shopee');
+      expect(response.marketplace?.price?.currency).toBe('VND');
+      expect(response.marketplace?.price?.sale).toBe(350);
+      expect(response.marketplace?.price?.list).toBe(400);
+    });
+
     it('should return hold verdict when critical data is missing', () => {
       const product: ProductDTO = {
         finalUrl: 'https://example.com/product',
@@ -150,11 +246,9 @@ describe('ResponseMapper', () => {
       const actions = {};
       const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, actions);
       
-      // Psychology scores should be calculated
-      expect(response.psychology).toBeDefined();
-      expect(response.psychology!.buyerDecisionScorecard).toBeDefined();
-      expect(response.psychology!.factors).toBeDefined();
-      expect(response.psychology!.notes).toBeDefined();
+      // Psychology V2 should be calculated
+      expect(response.psychologyV2).toBeDefined();
+      expect(response.psychologyV2!.scorecard).toBeDefined();
     });
   });
 });

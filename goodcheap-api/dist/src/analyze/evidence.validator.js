@@ -122,16 +122,15 @@ let EvidenceValidator = class EvidenceValidator {
     }
     validateEvidenceArray(response) {
         const errors = [];
-        const hasReviewSignals = Array.isArray(response.reviews) && response.reviews.length > 0;
         const evidenceTypes = new Set(response.evidence.map(e => e.type));
-        const diversityThreshold = hasReviewSignals ? 2 : 1;
+        const diversityThreshold = 3;
         if (evidenceTypes.size < diversityThreshold) {
             errors.push({
                 path: 'evidence',
                 error: `Insufficient evidence diversity - need at least ${diversityThreshold} distinct evidence types`,
             });
         }
-        const essentialEvidenceTypes = ['productPage', ...(hasReviewSignals ? ['review'] : [])];
+        const essentialEvidenceTypes = ['productPage', 'marketplace', 'review'];
         const missingTypes = essentialEvidenceTypes.filter(type => !response.evidence.some(e => e.type === type));
         if (missingTypes.length > 0) {
             errors.push({
@@ -144,7 +143,8 @@ let EvidenceValidator = class EvidenceValidator {
     validate(response) {
         const referenceErrors = this.validateEvidenceReferences(response);
         const arrayErrors = this.validateEvidenceArray(response);
-        const allErrors = [...referenceErrors, ...arrayErrors];
+        const combinedArrayErrors = arrayErrors.length > 0 ? [arrayErrors[0]] : [];
+        const allErrors = [...referenceErrors, ...combinedArrayErrors];
         const isValid = allErrors.length === 0;
         const status = isValid ? 'valid' : 'invalid';
         return {

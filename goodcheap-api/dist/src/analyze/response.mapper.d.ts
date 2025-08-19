@@ -1,5 +1,5 @@
-import { CommerceReviewResponse } from '../common/schemas/commerceReviewResponse.schema';
-import { ProductDTO, AnalysisDTO } from '../common/types';
+import type { CommerceReviewResponse } from '../common/schemas/commerceReviewResponse.schema';
+import type { ProductDTO, AnalysisDTO } from '../common/types';
 import { PsychologyService } from '../psychology/psychology.service';
 import { ResponseMapperInterface } from '../common/interfaces/response-mapper.interface';
 export declare class ResponseMapper implements ResponseMapperInterface {
@@ -7,6 +7,21 @@ export declare class ResponseMapper implements ResponseMapperInterface {
     constructor(psychologyService: PsychologyService);
     mapToEvidenceFirstResponse(product: ProductDTO, analysis: AnalysisDTO, actions: any): CommerceReviewResponse;
     private buildEvidenceArray;
+    private buildProductNormalization;
+    private enrichEvidenceLinking;
+    private parseQuery;
+    private computePriceFlags;
+    private buildMarketplace;
+    private buildPsychologyV2;
+    private buildAiDecision;
+    private extractYouTubeId;
+    private canonicalEvidenceKey;
+    private dedupeEvidenceByCanonicalSource;
+    private buildReviewsAggregate;
+    private isReviewRelatedToProduct;
+    private detectPlatform;
+    private filterUnrelatedVideos;
+    private buildProductVideosFromEvidence;
     private buildReviews;
     private mapReviewItem;
     private determineVerdict;
@@ -17,5 +32,9 @@ export declare class ResponseMapper implements ResponseMapperInterface {
     private clampRating;
     private normalizeMedia;
     private normalizeSource;
+    private buildAvailability;
+    private normalizeVndScale;
+    private toIsoDateTime;
+    private toIsoDate;
     private pickTopicEvidenceIds;
 }

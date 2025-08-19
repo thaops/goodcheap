@@ -18,13 +18,47 @@ export class UnfurlService implements UnfurlInterface {
   async expandUrl(url: string): Promise<string> {
     this.ensureValidUrl(url);
     try {
+      // Tránh network trong môi trường test để không phá unit/integration tests
+      const env = (process.env.NODE_ENV ?? '').toLowerCase();
+      if (env === 'test') return url;
+
       const { default: got } = await import('got');
-      const res = await got(url, {
-        followRedirect: true,
+
+      // 1) Thử HEAD để theo dõi redirect nhanh
+      try {
+        const headRes = await got.head(url, {
+          headers: { 'user-agent': UA },
+          followRedirect: true,
+          maxRedirects: 10,
+          timeout: { request: 8000 },
+          throwHttpErrors: false,
+        });
+        if (headRes && typeof headRes.url === 'string' && headRes.url.length > 0) {
+          return headRes.url;
+        }
+      } catch {}
+
+      // 2) Fallback GET nhẹ để lấy final URL (got theo dõi redirect mặc định)
+      const getRes = await got(url, {
         headers: { 'user-agent': UA },
-        timeout: { request: 10000 },
+        followRedirect: true,
+        maxRedirects: 10,
+        timeout: { request: 12000 },
       });
-      return res.url; // Final URL after redirects
+      if (getRes && typeof getRes.url === 'string' && getRes.url.length > 0) {
+        return getRes.url;
+      }
+
+      // 3) Chót: nếu có header Location thì resolve thủ công; nếu không thì trả lại URL gốc
+      const loc = (getRes as any)?.headers?.location;
+      if (typeof loc === 'string' && loc.length > 0) {
+        try {
+          const base = new URL(url);
+          const resolved = new URL(loc, base);
+          return resolved.toString();
+        } catch {}
+      }
+      return url;
     } catch (e: any) {
       const status = e?.response?.statusCode ?? 502;
       const msg = e?.message || 'Failed to expand URL';
@@ -33,9 +67,10 @@ export class UnfurlService implements UnfurlInterface {
   }
 
   private detectSource(finalUrl: string): ProductDTO['source'] {
-    if (finalUrl.includes('tiktok')) return 'tiktok';
-    if (finalUrl.includes('shopee')) return 'shopee';
-    if (finalUrl.includes('lazada')) return 'lazada';
+    const u = (finalUrl || '').toLowerCase();
+    if (u.includes('tiktok')) return 'tiktok';
+    if (u.includes('shopee')) return 'shopee';
+    if (u.includes('lazada')) return 'lazada';
     return 'other';
   }
 
