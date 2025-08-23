@@ -7,6 +7,8 @@ import { CacheModule } from './cache/cache.module';
 import { QueueModule } from './queue/queue.module';
 import { DatabaseModule } from './database/database.module';
 import { VideoModule } from './video/video.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -19,5 +21,7 @@ import { VideoModule } from './video/video.module';
     DatabaseModule,
     VideoModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

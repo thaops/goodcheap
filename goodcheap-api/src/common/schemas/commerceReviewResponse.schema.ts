@@ -94,6 +94,7 @@ export const CommerceReviewResponseSchema = z.object({
     breakdown: z.record(z.string(), z.number().int()).optional(),
     recentCount30d: z.number().int().min(0).optional(),
     verifiedPurchaseRatio: z.number().min(0).max(1).optional(),
+    reviewWithImagesPercent: z.number().min(0).max(1).optional(),
   }).optional(),
   reviewSummary: z.object({
     topPros: z.array(z.string()).optional(),

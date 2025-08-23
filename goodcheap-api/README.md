@@ -96,3 +96,41 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## API
+
+### POST `/analyze`
+
+- __Body__: chỉ nhận `{ url: string }`.
+- __Không còn hỗ trợ__ truyền raw HTML hoặc Product DTO.
+- Backend sẽ tự động unfurl URL, fetch & parse metadata để tạo Product DTO, sau đó phân tích và trả về response chuẩn.
+
+Request ví dụ:
+
+```bash
+curl -X POST http://localhost:3000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.tiktok.com/@shop/video/123456789"
+  }'
+```
+
+Ghi chú về giá (price):
+
+- Các trường `marketplace.price.current`, `sale`, `list`, `currency` trong response được build từ `product.price`, `product.discountPrice`, `product.listPrice`, `product.currency` và được chuẩn hóa trong `ResponseMapper.buildMarketplace()` ở `src/analyze/response.mapper.ts`.
+- Nguồn dữ liệu giá đến từ metadata (JSON-LD/OpenGraph) và các đường dẫn đặc thù nền tảng (ví dụ TikTok) được xử lý trong `UnfurlService`/`ReviewsService`.
+
+## Test & Môi trường
+
+- Trong môi trường test (`NODE_ENV=test`), để giữ test ổn định/nhanh, việc fetch HTML/network và scraping nặng bị tắt trong `UnfurlService.fetchHtml()` và `ReviewsService.extractTikTokMeta()`/`extractReviews()`.
+- Hệ quả: trong test, các trường giá có thể vắng (ví dụ `marketplace.price.current` không có) do không tải được dữ liệu thật từ mạng.
+- Để xác thực trích xuất giá hoạt động: chạy ở dev/prod (không phải `NODE_ENV=test`) để cho phép fetch/scrape.
+
+Feature flags liên quan:
+
+- `GC_ENABLE_LLM`
+- `GC_ENABLE_TIKTOK_SEARCH`
+- `GC_ENABLE_YOUTUBE_SEARCH`
+- `GC_AUTO_SCRAPE_REVIEWS`
+
+Tất cả được đọc trong luồng phân tích ở `src/analyze/analyze.controller.ts`, `src/unfurl/unfurl.service.ts`, và `src/reviews/reviews.service.ts`.

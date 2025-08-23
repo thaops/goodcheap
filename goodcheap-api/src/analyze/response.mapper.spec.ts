@@ -148,7 +148,7 @@ describe('ResponseMapper', () => {
       expect(response.marketplace?.price?.list).toBe(400);
     });
 
-    it('should NOT scale VND < 1000 for non-TikTok platforms as well (e.g., Shopee)', () => {
+    it('should scale VND < 1000 for Shopee platform (encoded in thousands)', () => {
       const product: ProductDTO = {
         finalUrl: 'https://shopee.vn/product/xyz',
         source: 'shopee',
@@ -171,8 +171,8 @@ describe('ResponseMapper', () => {
       const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
       expect(response.meta.platform).toBe('shopee');
       expect(response.marketplace?.price?.currency).toBe('VND');
-      expect(response.marketplace?.price?.sale).toBe(350);
-      expect(response.marketplace?.price?.list).toBe(400);
+      expect(response.marketplace?.price?.sale).toBe(350000);
+      expect(response.marketplace?.price?.list).toBe(400000);
     });
 
     it('should return hold verdict when critical data is missing', () => {
@@ -200,6 +200,70 @@ describe('ResponseMapper', () => {
       
       // Should return hold verdict when critical data is missing
       expect(response.aiAnalysis.verdict).toBe('hold');
+    });
+
+    it('should map ratingBreakdown into socialProof from ratingDistribution', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://example.com/product',
+        source: 'tiktok',
+        title: 'Product with breakdown',
+        ratingAvg: 4.3,
+        reviewCount: 21,
+        images: ['https://example.com/img.jpg'],
+      } as any;
+      // Provide rating distribution under a supported key
+      (product as any).ratingDistribution = { '5': 10, '4': 5, '3': 3, '2': 1, '1': 2 };
+
+      const analysis: AnalysisDTO = {
+        pros: [],
+        cons: [],
+        aspects: [],
+        decision: { verdict: 'consider' },
+      } as any;
+
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      expect(response.socialProof?.ratingBreakdown).toEqual({ '5': 10, '4': 5, '3': 3, '2': 1, '1': 2 });
+    });
+
+    it('should compute reviewWithImagesPercent from reviewsSample when not provided', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://example.com/p',
+        source: 'tiktok',
+        title: 'Product with media ratio',
+        ratingAvg: 4.0,
+        reviewCount: 3,
+        images: ['https://example.com/img.jpg'],
+        reviewsSample: [
+          { id: 'r1', rating: 5, text: 'nice', createdAt: new Date().toISOString(), images: ['a.jpg'] } as any,
+          { id: 'r2', rating: 4, text: 'ok', createdAt: new Date().toISOString() } as any,
+          { id: 'r3', rating: 3, text: 'meh', createdAt: new Date().toISOString(), videos: ['v.mp4'] } as any,
+        ],
+      } as any;
+
+      const analysis: AnalysisDTO = { pros: [], cons: [], aspects: [], decision: { verdict: 'consider' } } as any;
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      // withMedia = 2/3 => 0.666..., rounded to 0.67 by mapper
+      expect(response.reviewsAggregate?.reviewWithImagesPercent).toBe(0.67);
+    });
+
+    it('should prefer product.reviewWithImagesPercent when provided', () => {
+      const product: ProductDTO = {
+        finalUrl: 'https://example.com/p2',
+        source: 'tiktok',
+        title: 'Product with provided media ratio',
+        ratingAvg: 4.0,
+        reviewCount: 10,
+        images: ['https://example.com/img.jpg'],
+        reviewWithImagesPercent: 0.4,
+        reviewsSample: [
+          { id: 'r1', rating: 5, text: 'nice', createdAt: new Date().toISOString(), images: ['a.jpg'] } as any,
+          { id: 'r2', rating: 4, text: 'ok', createdAt: new Date().toISOString() } as any,
+        ],
+      } as any;
+
+      const analysis: AnalysisDTO = { pros: [], cons: [], aspects: [], decision: { verdict: 'consider' } } as any;
+      const response = responseMapper.mapToEvidenceFirstResponse(product, analysis, {});
+      expect(response.reviewsAggregate?.reviewWithImagesPercent).toBe(0.4);
     });
   });
 

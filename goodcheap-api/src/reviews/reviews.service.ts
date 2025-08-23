@@ -21,7 +21,84 @@ export class ReviewsService implements ReviewsInterface {
    */
   async extractTikTokMeta(product: ProductDTO): Promise<Partial<ProductDTO>> {
     const url = product.finalUrl || (product as any)?.canonicalUrl || '';
-    if (!url || !/tiktok\.com\//i.test(url)) return {};
+    this.logger.log(`extractTikTokMeta: Processing URL: ${url}`);
+    
+    if (!url || !/tiktok\.com\//i.test(url)) {
+      this.logger.warn(`extractTikTokMeta: Invalid or missing TikTok URL: ${url}`);
+      return {};
+    }
+    
+    // Skip heavy Playwright scraping during tests
+    const env = (process.env.NODE_ENV ?? '').toLowerCase();
+    if (env === 'test') { 
+      this.logger.log('extractTikTokMeta: disabled in test env'); 
+      return {}; 
+    }
+    
+    this.logger.log('extractTikTokMeta: Starting Playwright approach...');
+    // First try Playwright approach for dynamic content
+    const playwrightResult = await this.extractTikTokMetaWithPlaywright(url);
+    this.logger.log(`extractTikTokMeta: Playwright result: ${JSON.stringify(playwrightResult)}`);
+    
+    // If Playwright fails (empty result), fallback to simple HTTP + HTML parsing
+    if (!playwrightResult || (Object.keys(playwrightResult).length === 0)) {
+      this.logger.log('extractTikTokMeta: Playwright failed or returned empty, trying HTTP fallback');
+      const httpResult = await this.extractTikTokMetaWithHttp(url);
+      this.logger.log(`extractTikTokMeta: HTTP fallback result: ${JSON.stringify(httpResult)}`);
+      return httpResult;
+    }
+    
+    this.logger.log(`extractTikTokMeta: Returning Playwright result: ${JSON.stringify(playwrightResult)}`);
+    return playwrightResult;
+  }
+
+  /**
+   * Extract TikTok meta using simple HTTP request + HTML parsing (fallback when Playwright is blocked)
+   */
+  private async extractTikTokMetaWithHttp(url: string): Promise<Partial<ProductDTO>> {
+    this.logger.log(`extractTikTokMetaWithHttp: Starting HTTP request to ${url}`);
+    try {
+      const { default: got } = await import('got');
+      this.logger.log('extractTikTokMetaWithHttp: Got module imported, making HTTP request...');
+      
+      const html = await got(url, {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'accept-language': 'vi-VN,vi;q=0.9,en;q=0.8',
+          'cache-control': 'no-cache',
+        },
+        timeout: { request: 10000 },
+        followRedirect: true,
+        maxRedirects: 5,
+      }).text();
+      
+      this.logger.log(`extractTikTokMetaWithHttp: Received HTML response, length: ${html?.length || 0}`);
+      
+      if (!html || html.length < 100) {
+        this.logger.warn('extractTikTokMetaWithHttp: received empty or very short HTML response');
+        return {};
+      }
+      
+      // Log a snippet of HTML for debugging (first 500 chars)
+      this.logger.log(`extractTikTokMetaWithHttp: HTML snippet: ${html.substring(0, 500)}...`);
+      
+      // Use the existing HTML parsing logic
+      this.logger.log('extractTikTokMetaWithHttp: Calling extractTikTokFromHtml...');
+      const result = await this.extractTikTokFromHtml(html);
+      this.logger.log(`extractTikTokMetaWithHttp: extractTikTokFromHtml returned: ${JSON.stringify(result)}`);
+      this.logger.log(`extractTikTokMetaWithHttp: extracted ${Object.keys(result).length} fields from HTML`);
+      return result;
+    } catch (e: any) {
+      this.logger.error(`extractTikTokMetaWithHttp failed: ${e?.message || e}`, e?.stack);
+      return {};
+    }
+  }
+
+  /**
+   * Extract TikTok meta using Playwright (original approach) 
+   */
+  private async extractTikTokMetaWithPlaywright(url: string): Promise<Partial<ProductDTO>> {
     const headless = (process.env.PLAYWRIGHT_HEADLESS ?? 'true') === 'true';
     const timeoutMs = Math.max(5000, Math.min(30000, Number(process.env.REVIEWS_SCRAPE_TIMEOUT_MS || 12000)));
     const captureNetwork = true;
@@ -75,6 +152,18 @@ export class ReviewsService implements ReviewsInterface {
         });
       }
       await page.goto(url, { waitUntil: 'load', timeout: timeoutMs });
+      
+      // Check for CAPTCHA/security page early
+      try {
+        const content = await page.content();
+        if (/captcha|verification|security check|verify to continue/i.test(content)) {
+          this.logger.warn('extractTikTokMetaWithPlaywright: CAPTCHA detected, will fallback to HTTP method');
+          await context.close();
+          await browser.close();
+          return {}; // Return empty to trigger HTTP fallback
+        }
+      } catch {}
+      
       try { await page.waitForLoadState('networkidle', { timeout: 3000 }); } catch {}
       // Thử mở tab đánh giá để kích hoạt API liên quan
       try { await page.click('text=Đánh giá', { timeout: 1500 }); } catch {}
@@ -205,7 +294,7 @@ export class ReviewsService implements ReviewsInterface {
           }));
           const out = resolve(logsDir, `scrape-net-${Date.now()}.json`);
           writeFileSync(out, JSON.stringify({ url, count: buckets.length, items: slim }, null, 2), 'utf-8');
-          this.logger.warn(`extractTikTokMeta: zero reviews, network dump saved: ${out}`);
+          this.logger.warn(`extractTikTokMetaWithPlaywright: zero reviews, network dump saved: ${out}`);
         } catch {}
       }
 
@@ -220,12 +309,12 @@ export class ReviewsService implements ReviewsInterface {
           if ((process.env.DEBUG_ZERO ?? '0') === '1') {
             const imgPath = dir + sep + `tiktok-zero-${Date.now()}.png`;
             await page.screenshot({ path: imgPath, fullPage: true });
-            this.logger.warn(`extractTikTokMeta: zero reviews, screenshot saved: ${imgPath}`);
+            this.logger.warn(`extractTikTokMetaWithPlaywright: zero reviews, screenshot saved: ${imgPath}`);
           }
           if ((process.env.DEBUG_ZERO ?? '0') === '1') {
             const htmlPath = dir + sep + `tiktok-zero-${Date.now()}.html`;
             writeFileSync(htmlPath, await page.content(), { encoding: 'utf-8' });
-            this.logger.warn(`extractTikTokMeta: zero reviews, html saved: ${htmlPath}`);
+            this.logger.warn(`extractTikTokMetaWithPlaywright: zero reviews, html saved: ${htmlPath}`);
           }
         } catch {}
       }
@@ -241,7 +330,7 @@ export class ReviewsService implements ReviewsInterface {
       if (Number.isInteger(candidates.reviewCount)) out.reviewCount = candidates.reviewCount as number;
       return out;
     } catch (e) {
-      this.logger.warn(`extractTikTokMeta failed: ${(e as any)?.message || e}`);
+      this.logger.warn(`extractTikTokMetaWithPlaywright failed: ${(e as any)?.message || e}`);
       return {};
     }
   }
@@ -251,8 +340,12 @@ export class ReviewsService implements ReviewsInterface {
    * Ưu tiên JSON-LD <script type="application/ld+json">, sau đó meta tags và regex nhẹ.
    */
   async extractTikTokFromHtml(html: string): Promise<Partial<ProductDTO>> {
+    this.logger.log(`extractTikTokFromHtml: Starting HTML parsing, length: ${html?.length || 0}`);
     try {
-      if (typeof html !== 'string' || html.length < 50) return {};
+      if (typeof html !== 'string' || html.length < 50) {
+        this.logger.warn(`extractTikTokFromHtml: Invalid HTML input, length: ${html?.length || 0}`);
+        return {};
+      }
       const out: Partial<ProductDTO> = {};
 
       const safeNum = (v: any): number | undefined => {
@@ -285,21 +378,33 @@ export class ReviewsService implements ReviewsInterface {
         return n1 ?? n2 ?? undefined;
       };
 
+      this.logger.log('extractTikTokFromHtml: Step 1 - Looking for JSON-LD blocks...');
       // 1) JSON-LD blocks
       const ldBlocks: any[] = [];
       try {
         const reLd = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
         let m: RegExpExecArray | null;
+        let jsonLdCount = 0;
         while ((m = reLd.exec(html))) {
+          jsonLdCount++;
           const raw = (m[1] || '').trim();
           if (!raw) continue;
           // Một số trang chèn nhiều JSON nối liền -> cố gắng parse từng khối
           const candidates = splitJsonCandidates(raw);
           for (const c of candidates) {
-            try { const j = JSON.parse(c); ldBlocks.push(j); } catch {}
+            try { 
+              const j = JSON.parse(c); 
+              ldBlocks.push(j);
+              this.logger.log(`extractTikTokFromHtml: Found JSON-LD: ${JSON.stringify(j).substring(0, 200)}...`);
+            } catch (parseErr) {
+              this.logger.warn(`extractTikTokFromHtml: Failed to parse JSON-LD: ${parseErr}`);
+            }
           }
         }
-      } catch {}
+        this.logger.log(`extractTikTokFromHtml: Found ${jsonLdCount} JSON-LD script tags, ${ldBlocks.length} parsed blocks`);
+      } catch (ldErr) {
+        this.logger.error(`extractTikTokFromHtml: Error in JSON-LD extraction: ${ldErr}`);
+      }
 
       const fromLd = (obj: any) => {
         try {
@@ -344,6 +449,67 @@ export class ReviewsService implements ReviewsInterface {
         }
       }
 
+      this.logger.log(`extractTikTokFromHtml: After JSON-LD processing - Price: ${out.price}, Currency: ${out.currency}, Title: ${out.title ? 'found' : 'not found'}`);
+      this.logger.log('extractTikTokFromHtml: Step 1.5 - Looking for TikTok inline JSON...');
+
+      // 1.5) TikTok inline JSON (sku_info, SkuPrice): trích xuất price_val, price_str, original_price
+      try {
+        if (out.price == null || !out.currency || out.discountPrice == null) {
+          const reScriptAll = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+          let sm: RegExpExecArray | null;
+          let inlineJsonCount = 0;
+          while ((sm = reScriptAll.exec(html))) {
+            const code = (sm[1] || '');
+            if (!/(sku_info|SkuPrice|price_val|price_str|original_price)/i.test(code)) continue;
+            inlineJsonCount++;
+            this.logger.log(`extractTikTokFromHtml: Found inline JSON script #${inlineJsonCount} with price patterns`);
+
+            // Lấy price_val hoặc price_str
+            const mPriceVal = /"price_val"\s*:\s*([0-9]+)/i.exec(code) || /"price"\s*:\s*([0-9]+)/i.exec(code);
+            const mPriceStr = /"price_str"\s*:\s*"([^"]+)"/i.exec(code);
+            const mOrig = /"(?:original_price|origin_price|list_price|max_price)"\s*:\s*([0-9]+)/i.exec(code);
+            
+            if (mPriceVal) this.logger.log(`extractTikTokFromHtml: Found price_val: ${mPriceVal[1]}`);
+            if (mPriceStr) this.logger.log(`extractTikTokFromHtml: Found price_str: ${mPriceStr[1]}`);
+            if (mOrig) this.logger.log(`extractTikTokFromHtml: Found original_price: ${mOrig[1]}`);
+
+            if (out.price == null) {
+              const pv = mPriceVal?.[1] ? toIntPrice(mPriceVal[1]) : undefined;
+              const ps = mPriceStr?.[1];
+              const pFromStr = ps ? (toIntPrice(ps) ?? safeNum(ps)) : undefined;
+              const p = pv ?? pFromStr;
+              if (Number.isFinite(p as any)) {
+                out.price = p as number;
+                this.logger.log(`extractTikTokFromHtml: Set price from inline JSON: ${out.price}`);
+              }
+            }
+
+            if (out.discountPrice == null && mOrig?.[1]) {
+              const op = toIntPrice(mOrig[1]);
+              if (Number.isFinite(op as any)) {
+                out.discountPrice = op as number;
+                this.logger.log(`extractTikTokFromHtml: Set discount price from inline JSON: ${out.discountPrice}`);
+              }
+            }
+
+            if (!out.currency) {
+              const mCur = /(VND|USD|IDR|THB|₫|VNĐ)/i.exec(code);
+              const c = normCurrency(mCur?.[1]);
+              if (c) {
+                out.currency = c as any;
+                this.logger.log(`extractTikTokFromHtml: Set currency from inline JSON: ${out.currency}`);
+              }
+            }
+
+            // Nếu đã có đủ dữ liệu cơ bản, dừng sớm
+            if (out.price != null && out.currency) break;
+          }
+          this.logger.log(`extractTikTokFromHtml: Processed ${inlineJsonCount} inline JSON scripts`);
+        }
+      } catch (inlineErr) {
+        this.logger.error(`extractTikTokFromHtml: Error in inline JSON parsing: ${inlineErr}`);
+      }
+
       // 2) Meta tags (og:title, og:image)
       try {
         if (!out.title) {
@@ -369,10 +535,16 @@ export class ReviewsService implements ReviewsInterface {
           if (pr) out.price = pr;
         }
         if (out.price == null) {
-          // Bắt đơn giá từ JSON/HTML, ưu tiên chuẩn hóa nghìn
-          const mPrice = /\"price\"\s*:\s*\"?([0-9][0-9.,]{2,})\"?/i.exec(html) || /item_price\":\s*\"([0-9.,]+)\"/i.exec(html);
-          const p = toIntPrice(mPrice?.[1]) ?? safeNum(mPrice?.[1]);
-          if (p) out.price = p;
+          // Bắt đơn giá từ JSON/HTML. Nếu có format nghìn (1.234.567 hoặc 1,234,567) dùng toIntPrice; nếu không, ưu tiên số thập phân (safeNum)
+          const mPrice = /\"price\"\s*:\s*\"?([0-9][0-9.,]{1,})\"?/i.exec(html) || /item_price\":\s*\"([0-9.,]+)\"/i.exec(html);
+          const rawPrice = mPrice?.[1];
+          const thousandsLike = typeof rawPrice === 'string' && /^[0-9]{1,3}(?:[.,][0-9]{3}){1,4}$/.test(rawPrice);
+          let p = thousandsLike ? toIntPrice(rawPrice) : safeNum(rawPrice);
+          if (!Number.isFinite(p as any) && typeof rawPrice === 'string') {
+            // fallback cuối cùng
+            p = toIntPrice(rawPrice) ?? safeNum(rawPrice);
+          }
+          if (Number.isFinite(p as any)) out.price = p as number;
         }
         if (out.price == null) {
           // Bắt giá VND chung xuất hiện trong trang: ví dụ "129.000 ₫" hoặc "129,000 VND"
@@ -385,6 +557,11 @@ export class ReviewsService implements ReviewsInterface {
         const mCur = /"priceCurrency"\s*:\s*"([A-Z]{3})"/i.exec(html) || /(VND|USD|IDR|THB|₫|VNĐ)/i.exec(html);
         const c = normCurrency(mCur?.[1]);
         if (c) out.currency = c as any;
+      }
+      // Suy luận VND nếu có tín hiệu locale Việt Nam nhưng chưa xác định currency
+      if (!out.currency) {
+        const vnSignal = /(lang=["']?vi\b|vi[-_]?VN|Asia\/Ho_Chi_Minh|\.vn\b)/i.test(html);
+        if (vnSignal) out.currency = 'VND' as any;
       }
       if (out.ratingAvg == null) {
         const mR = /"ratingValue"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/i.exec(html);
@@ -433,9 +610,19 @@ export class ReviewsService implements ReviewsInterface {
         }
       }
 
+      // Cuối cùng: clamp lại VND một lần nữa (đề phòng giá từ fallback)
+      if (out.currency === 'VND' && typeof out.price === 'number') {
+        if (out.price < 1000 || out.price > 50_000_000) {
+          this.logger.warn(`extractTikTokFromHtml: Removing invalid VND price: ${out.price}`);
+          delete out.price;
+        }
+      }
+
+      this.logger.log(`extractTikTokFromHtml: Final result - Price: ${out.price}, Currency: ${out.currency}, Discount: ${out.discountPrice}, Title: ${out.title ? 'found' : 'not found'}, Images: ${out.images?.length || 0}`);
+      this.logger.log(`extractTikTokFromHtml: Completed HTML parsing, returning: ${JSON.stringify(out)}`);
       return out;
     } catch (e) {
-      this.logger.warn(`extractTikTokFromHtml failed: ${e}`);
+      this.logger.error(`extractTikTokFromHtml failed: ${e}`, e?.stack);
       return {};
     }
   }
@@ -444,6 +631,9 @@ export class ReviewsService implements ReviewsInterface {
     const { finalUrl, productId } = product;
     const source = (product.source as any) || this.detectSourceFromUrl(finalUrl);
     this.logger.log(`extractReviews: source=${source} url=${finalUrl} productId=${productId}`);
+    // Skip heavy scraping in test environment
+    const env = (process.env.NODE_ENV ?? '').toLowerCase();
+    if (env === 'test') { this.logger.log('extractReviews: disabled in test env'); return []; }
 
     try {
       switch (source) {

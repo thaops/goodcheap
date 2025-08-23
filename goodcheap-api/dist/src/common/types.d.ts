@@ -9,81 +9,93 @@ export type ProductDTO = {
     discountPrice?: number;
     ratingAvg?: number;
     reviewCount?: number;
+    ratingBreakdown?: Record<string, number>;
+    reviewWithImagesPercent?: number;
     shopName?: string;
     shopId?: string;
     description?: string;
     specs?: Record<string, string>;
+    returnPolicy?: string;
+    returnWindowDays?: number;
+    buyerProtection?: string | boolean;
+    warranty?: string;
+    shipping?: {
+        cod?: boolean;
+        freeThreshold?: number;
+        maxDays?: number;
+        minDays?: number;
+    };
     reviewsSample?: Array<{
-        id?: string;
-        rating?: number;
-        text: string;
-        images?: string[];
-        authorName?: string;
         authorAvatar?: string;
+        authorName?: string;
         createdAt?: string;
         helpfulCount?: number;
+        id?: string;
+        images?: string[];
+        rating?: number;
+        text: string;
     }>;
 };
 export type ReviewItem = {
-    id?: string;
-    rating?: number;
-    text: string;
-    images?: string[];
-    authorName?: string;
     authorAvatar?: string;
+    authorName?: string;
     createdAt?: string;
     helpfulCount?: number;
+    id?: string;
+    images?: string[];
+    rating?: number;
+    text: string;
 };
 export type AnalysisDTO = {
+    aspects?: Array<{
+        cons: string[];
+        name: string;
+        negativeQuotes: string[];
+        positiveQuotes: string[];
+        pros: string[];
+    }>;
+    confidence?: number;
+    decision?: {
+        rationale: string[];
+        verdict: 'avoid' | 'buy' | 'consider';
+    };
     goodCheapScore: number;
+    priceBenchmarks?: {
+        currency?: string;
+        high?: number;
+        low?: number;
+        median?: number;
+    };
     pros: string[];
     cons: string[];
     redFlags: string[];
-    summary?: string;
-    confidence?: number;
-    priceBenchmarks?: {
-        median?: number;
-        low?: number;
-        high?: number;
-        currency?: string;
-    };
-    decision?: {
-        verdict: 'buy' | 'consider' | 'avoid';
-        rationale: string[];
+    reviewHighlights?: {
+        negative: ReviewItem[];
+        positive: ReviewItem[];
     };
     reviewInsights?: {
-        positives: string[];
-        negatives: string[];
         commonComplaints?: string[];
+        negatives: string[];
+        positives: string[];
     };
-    aspects?: Array<{
-        name: string;
-        pros: string[];
-        cons: string[];
-        positiveQuotes: string[];
-        negativeQuotes: string[];
-    }>;
-    reviewHighlights?: {
-        positive: ReviewItem[];
-        negative: ReviewItem[];
-    };
+    summary?: string;
 };
 export type AlternativeItem = {
-    title: string;
-    price?: number;
     currency?: string;
-    score?: number;
-    url?: string;
     image?: string;
+    price?: number;
+    score?: number;
+    title: string;
+    url?: string;
 };
 export type ActionsDTO = {
     buyUrl?: string;
     trackPrice?: boolean;
 };
 export type AnalyzeResponse = {
-    product: ProductDTO;
+    actions?: ActionsDTO;
+    alternatives?: AlternativeItem[];
     analysis: AnalysisDTO;
     cautions?: string[];
-    alternatives?: AlternativeItem[];
-    actions?: ActionsDTO;
+    product: ProductDTO;
 };

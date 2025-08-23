@@ -16,6 +16,8 @@ const cache_module_1 = require("./cache/cache.module");
 const queue_module_1 = require("./queue/queue.module");
 const database_module_1 = require("./database/database.module");
 const video_module_1 = require("./video/video.module");
+const app_controller_1 = require("./app.controller");
+const app_service_1 = require("./app.service");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -31,6 +33,8 @@ exports.AppModule = AppModule = __decorate([
             database_module_1.DatabaseModule,
             video_module_1.VideoModule,
         ],
+        controllers: [app_controller_1.AppController],
+        providers: [app_service_1.AppService],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

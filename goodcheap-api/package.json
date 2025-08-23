@@ -28,6 +28,7 @@
     "@nestjs/swagger": "^11.2.0",
     "bullmq": "^5.56.9",
     "cheerio": "^1.1.2",
+    "express": "^5.1.0",
     "got": "^14.4.7",
     "ioredis": "^5.7.0",
     "openai": "^5.12.2",
@@ -72,6 +73,9 @@
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
+    "testPathIgnorePatterns": [
+      ".*\\.e2e-spec\\.ts$"
+    ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },

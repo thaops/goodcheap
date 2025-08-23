@@ -94,6 +94,7 @@ exports.CommerceReviewResponseSchema = zod_1.z.object({
         breakdown: zod_1.z.record(zod_1.z.string(), zod_1.z.number().int()).optional(),
         recentCount30d: zod_1.z.number().int().min(0).optional(),
         verifiedPurchaseRatio: zod_1.z.number().min(0).max(1).optional(),
+        reviewWithImagesPercent: zod_1.z.number().min(0).max(1).optional(),
     }).optional(),
     reviewSummary: zod_1.z.object({
         topPros: zod_1.z.array(zod_1.z.string()).optional(),

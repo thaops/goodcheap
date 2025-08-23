@@ -1,0 +1,1 @@
+{"version":3,"file":"unfurl.schema.js","sourceRoot":"","sources":["../../../src/unfurl/unfurl.schema.ts"],"names":[],"mappings":";;;AAAA,6BAAwB;AAEX,QAAA,mBAAmB,GAAG,OAAC,CAAC,MAAM,CAAC;IAC1C,GAAG,EAAE,OAAC,CAAC,MAAM,EAAE,CAAC,GAAG,EAAE;IACrB,KAAK,EAAE,OAAC;SACL,MAAM,CAAC;QACN,cAAc,EAAE,OAAC,CAAC,OAAO,EAAE,CAAC,QAAQ,EAAE;KACvC,CAAC;SACD,QAAQ,EAAE;CACd,CAAC,CAAC"}

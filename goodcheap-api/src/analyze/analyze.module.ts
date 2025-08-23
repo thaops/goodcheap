@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AnalyzeController } from './analyze.controller';
 import { AnalyzeService } from './analyze.service';
 import { ResponseMapper } from './response.mapper';
+import { SimplifiedResponseMapper } from './simplified-response.mapper';
 import { PsychologyService } from '../psychology/psychology.service';
 import { GeminiService } from '../ai/gemini.service';
 import { UnfurlModule } from '../unfurl/unfurl.module';
@@ -13,7 +14,7 @@ import { EVIDENCE_AGGREGATOR_TOKEN } from '../common/interfaces/evidence-aggrega
 @Module({
   imports: [UnfurlModule, ReviewsModule],
   providers: [
-    AnalyzeService, 
+    AnalyzeService,
     PsychologyService,
     {
       provide: 'EvidenceValidator',
@@ -21,16 +22,20 @@ import { EVIDENCE_AGGREGATOR_TOKEN } from '../common/interfaces/evidence-aggrega
     },
     {
       provide: EVIDENCE_AGGREGATOR_TOKEN,
-      useClass: EvidenceAggregator
+      useClass: EvidenceAggregator,
     },
     {
       provide: 'ResponseMapper',
-      useClass: ResponseMapper
+      useClass: ResponseMapper,
+    },
+    {
+      provide: 'SimplifiedResponseMapper',
+      useClass: SimplifiedResponseMapper,
     },
     {
       provide: 'GeminiService',
-      useClass: GeminiService
-    }
+      useClass: GeminiService,
+    },
   ],
   controllers: [AnalyzeController],
   exports: [AnalyzeService],

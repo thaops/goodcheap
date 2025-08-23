@@ -1,6 +1,7 @@
 import { ProductDTO } from '../common/types';
 import { UnfurlInterface } from '../common/interfaces/unfurl.interface';
 export declare class UnfurlService implements UnfurlInterface {
+    private readonly logger;
     private ensureValidUrl;
     expandUrl(url: string): Promise<string>;
     private detectSource;

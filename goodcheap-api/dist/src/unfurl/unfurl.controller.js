@@ -16,13 +16,32 @@ exports.UnfurlController = void 0;
 const common_1 = require("@nestjs/common");
 const unfurl_service_1 = require("./unfurl.service");
 const swagger_1 = require("@nestjs/swagger");
+const zod_pipe_1 = require("../common/pipes/zod.pipe");
+const unfurl_schema_1 = require("./unfurl.schema");
+const unfurl_models_1 = require("./unfurl.models");
 let UnfurlController = class UnfurlController {
     unfurl;
     constructor(unfurl) {
         this.unfurl = unfurl;
     }
-    async unfurlUrl(url) {
-        return this.unfurl.fromUrl(url);
+    async unfurlUrl(body) {
+        const url = body?.url;
+        const debug = body?.debug || {};
+        const dto = await this.unfurl.fromUrl(url);
+        if (debug?.includeRawHtml && process.env.GC_DEBUG_RAW === '1') {
+            try {
+                const finalUrl = dto?.finalUrl || url;
+                const raw = await this.unfurl.fetchHtml(finalUrl);
+                const limit = Number(process.env.GC_DEBUG_RAW_LIMIT || 500000);
+                const truncated = raw.length > limit;
+                const rawHtml = truncated ? raw.slice(0, limit) : raw;
+                return { ...dto, _debug: { rawHtml, truncated } };
+            }
+            catch (e) {
+                return { ...dto, _debug: { rawHtml: null, error: 'fetch_html_failed', message: String(e?.message || e) } };
+            }
+        }
+        return dto;
     }
 };
 exports.UnfurlController = UnfurlController;
@@ -34,18 +53,31 @@ __decorate([
             type: 'object',
             properties: {
                 url: { type: 'string', format: 'uri', example: 'https://www.tiktok.com/...' },
+                debug: {
+                    type: 'object',
+                    properties: {
+                        includeRawHtml: {
+                            type: 'boolean',
+                            description: 'Nếu true và GC_DEBUG_RAW=1, API sẽ trả thêm _debug.rawHtml (có thể được cắt bớt bởi GC_DEBUG_RAW_LIMIT).',
+                            example: false,
+                        },
+                    },
+                },
             },
             required: ['url'],
         },
     }),
     (0, common_1.Post)(),
-    __param(0, (0, common_1.Body)('url')),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Unfurl thành công', type: unfurl_models_1.ProductResponseModel }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid URL' }),
+    __param(0, (0, common_1.Body)(new zod_pipe_1.ZodValidationPipe(unfurl_schema_1.UnfurlRequestSchema))),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UnfurlController.prototype, "unfurlUrl", null);
 exports.UnfurlController = UnfurlController = __decorate([
     (0, swagger_1.ApiTags)('unfurl'),
+    (0, swagger_1.ApiExtraModels)(unfurl_models_1.ProductResponseModel, unfurl_models_1.ReviewItemModel, unfurl_models_1.ShippingModel, unfurl_models_1.DebugModel),
     (0, common_1.Controller)('unfurl'),
     __metadata("design:paramtypes", [unfurl_service_1.UnfurlService])
 ], UnfurlController);

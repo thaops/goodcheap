@@ -2,11 +2,15 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
   const config = app.get(ConfigService);
   const startPort = Number(config.get('PORT') ?? 3000);
+  const bodyLimit = String(config.get('JSON_BODY_LIMIT') ?? '2mb');
+  app.use(json({ limit: bodyLimit }));
+  app.use(urlencoded({ extended: true, limit: bodyLimit }));
 
   // Swagger setup (configurable via .env)
   const swaggerEnabled = String(config.get('SWAGGER_ENABLE') ?? '1') === '1';

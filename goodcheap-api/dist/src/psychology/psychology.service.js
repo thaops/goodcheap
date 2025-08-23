@@ -52,7 +52,7 @@ let PsychologyService = class PsychologyService {
             riskReversal,
             easeToBuy,
             urgency,
-            total: psychologyScore,
+            total: trust + evidence + riskReversal + easeToBuy + urgency,
         };
     }
 };

@@ -227,13 +227,13 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         qnaCount: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
         ratingAvg?: number | undefined;
-        ratingCount?: number | undefined;
         ratingBreakdown?: Record<string, number> | undefined;
+        ratingCount?: number | undefined;
         qnaCount?: number | undefined;
     }, {
         ratingAvg?: number | undefined;
-        ratingCount?: number | undefined;
         ratingBreakdown?: Record<string, number> | undefined;
+        ratingCount?: number | undefined;
         qnaCount?: number | undefined;
     }>>;
     reviews: z.ZodArray<z.ZodObject<{
@@ -252,8 +252,8 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         evidenceId: z.ZodString;
     }, "strip", z.ZodTypeAny, {
         source: "unknown" | "platform" | "tiktok_video" | "external";
-        rating: number;
         text: string;
+        rating: number;
         date: string;
         id: string;
         evidenceId: string;
@@ -266,8 +266,8 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         language?: string | undefined;
     }, {
         source: "unknown" | "platform" | "tiktok_video" | "external";
-        rating: number;
         text: string;
+        rating: number;
         date: string;
         id: string;
         evidenceId: string;
@@ -285,13 +285,16 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         breakdown: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNumber>>;
         recentCount30d: z.ZodOptional<z.ZodNumber>;
         verifiedPurchaseRatio: z.ZodOptional<z.ZodNumber>;
+        reviewWithImagesPercent: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
+        reviewWithImagesPercent?: number | undefined;
         count?: number | undefined;
         average?: number | undefined;
         breakdown?: Record<string, number> | undefined;
         recentCount30d?: number | undefined;
         verifiedPurchaseRatio?: number | undefined;
     }, {
+        reviewWithImagesPercent?: number | undefined;
         count?: number | undefined;
         average?: number | undefined;
         breakdown?: Record<string, number> | undefined;
@@ -561,7 +564,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         }>, "many">;
     }, "strip", z.ZodTypeAny, {
         confidence: number;
-        verdict: "buy" | "consider" | "avoid" | "unknown" | "hold";
+        verdict: "avoid" | "buy" | "consider" | "unknown" | "hold";
         citations: {
             evidenceId: string;
             note?: string | undefined;
@@ -576,7 +579,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         }[] | undefined;
     }, {
         confidence: number;
-        verdict: "buy" | "consider" | "avoid" | "unknown" | "hold";
+        verdict: "avoid" | "buy" | "consider" | "unknown" | "hold";
         citations: {
             evidenceId: string;
             note?: string | undefined;
@@ -608,7 +611,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         }>, "many">>;
         whatToCollectNext: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
     }, "strip", z.ZodTypeAny, {
-        verdict: "buy" | "consider" | "avoid" | "unknown";
+        verdict: "avoid" | "buy" | "consider" | "unknown";
         confidence?: number | undefined;
         reasons?: {
             id: string;
@@ -617,7 +620,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         }[] | undefined;
         whatToCollectNext?: string[] | undefined;
     }, {
-        verdict: "buy" | "consider" | "avoid" | "unknown";
+        verdict: "avoid" | "buy" | "consider" | "unknown";
         confidence?: number | undefined;
         reasons?: {
             id: string;
@@ -846,30 +849,30 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
             ratingAvg?: number | undefined;
             returnPolicy?: string | undefined;
             warranty?: string | undefined;
-            ratingCount?: number | undefined;
-            soldCount?: string | number | undefined;
-            ratingDist?: Record<string, number> | undefined;
-            qaCount?: number | undefined;
             shipping?: {
                 cod?: boolean | undefined;
                 minDays?: number | undefined;
                 maxDays?: number | undefined;
                 freeThreshold?: number | undefined;
             } | undefined;
+            ratingCount?: number | undefined;
+            soldCount?: string | number | undefined;
+            ratingDist?: Record<string, number> | undefined;
+            qaCount?: number | undefined;
         }, {
             ratingAvg?: number | undefined;
             returnPolicy?: string | undefined;
             warranty?: string | undefined;
-            ratingCount?: number | undefined;
-            soldCount?: string | number | undefined;
-            ratingDist?: Record<string, number> | undefined;
-            qaCount?: number | undefined;
             shipping?: {
                 cod?: boolean | undefined;
                 minDays?: number | undefined;
                 maxDays?: number | undefined;
                 freeThreshold?: number | undefined;
             } | undefined;
+            ratingCount?: number | undefined;
+            soldCount?: string | number | undefined;
+            ratingDist?: Record<string, number> | undefined;
+            qaCount?: number | undefined;
         }>>;
         price: z.ZodOptional<z.ZodObject<{
             list: z.ZodOptional<z.ZodNumber>;
@@ -948,16 +951,16 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
             ratingAvg?: number | undefined;
             returnPolicy?: string | undefined;
             warranty?: string | undefined;
-            ratingCount?: number | undefined;
-            soldCount?: string | number | undefined;
-            ratingDist?: Record<string, number> | undefined;
-            qaCount?: number | undefined;
             shipping?: {
                 cod?: boolean | undefined;
                 minDays?: number | undefined;
                 maxDays?: number | undefined;
                 freeThreshold?: number | undefined;
             } | undefined;
+            ratingCount?: number | undefined;
+            soldCount?: string | number | undefined;
+            ratingDist?: Record<string, number> | undefined;
+            qaCount?: number | undefined;
         } | undefined;
         shop?: {
             shopId?: string | undefined;
@@ -995,16 +998,16 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
             ratingAvg?: number | undefined;
             returnPolicy?: string | undefined;
             warranty?: string | undefined;
-            ratingCount?: number | undefined;
-            soldCount?: string | number | undefined;
-            ratingDist?: Record<string, number> | undefined;
-            qaCount?: number | undefined;
             shipping?: {
                 cod?: boolean | undefined;
                 minDays?: number | undefined;
                 maxDays?: number | undefined;
                 freeThreshold?: number | undefined;
             } | undefined;
+            ratingCount?: number | undefined;
+            soldCount?: string | number | undefined;
+            ratingDist?: Record<string, number> | undefined;
+            qaCount?: number | undefined;
         } | undefined;
         shop?: {
             shopId?: string | undefined;
@@ -1048,8 +1051,8 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
     };
     reviews: {
         source: "unknown" | "platform" | "tiktok_video" | "external";
-        rating: number;
         text: string;
+        rating: number;
         date: string;
         id: string;
         evidenceId: string;
@@ -1104,7 +1107,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
     }[];
     aiAnalysis: {
         confidence: number;
-        verdict: "buy" | "consider" | "avoid" | "unknown" | "hold";
+        verdict: "avoid" | "buy" | "consider" | "unknown" | "hold";
         citations: {
             evidenceId: string;
             note?: string | undefined;
@@ -1151,11 +1154,12 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
     } | undefined;
     socialProof?: {
         ratingAvg?: number | undefined;
-        ratingCount?: number | undefined;
         ratingBreakdown?: Record<string, number> | undefined;
+        ratingCount?: number | undefined;
         qnaCount?: number | undefined;
     } | undefined;
     reviewsAggregate?: {
+        reviewWithImagesPercent?: number | undefined;
         count?: number | undefined;
         average?: number | undefined;
         breakdown?: Record<string, number> | undefined;
@@ -1205,7 +1209,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         flags?: string[] | undefined;
     } | undefined;
     aiDecision?: {
-        verdict: "buy" | "consider" | "avoid" | "unknown";
+        verdict: "avoid" | "buy" | "consider" | "unknown";
         confidence?: number | undefined;
         reasons?: {
             id: string;
@@ -1245,16 +1249,16 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
             ratingAvg?: number | undefined;
             returnPolicy?: string | undefined;
             warranty?: string | undefined;
-            ratingCount?: number | undefined;
-            soldCount?: string | number | undefined;
-            ratingDist?: Record<string, number> | undefined;
-            qaCount?: number | undefined;
             shipping?: {
                 cod?: boolean | undefined;
                 minDays?: number | undefined;
                 maxDays?: number | undefined;
                 freeThreshold?: number | undefined;
             } | undefined;
+            ratingCount?: number | undefined;
+            soldCount?: string | number | undefined;
+            ratingDist?: Record<string, number> | undefined;
+            qaCount?: number | undefined;
         } | undefined;
         shop?: {
             shopId?: string | undefined;
@@ -1298,8 +1302,8 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
     };
     reviews: {
         source: "unknown" | "platform" | "tiktok_video" | "external";
-        rating: number;
         text: string;
+        rating: number;
         date: string;
         id: string;
         evidenceId: string;
@@ -1354,7 +1358,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
     }[];
     aiAnalysis: {
         confidence: number;
-        verdict: "buy" | "consider" | "avoid" | "unknown" | "hold";
+        verdict: "avoid" | "buy" | "consider" | "unknown" | "hold";
         citations: {
             evidenceId: string;
             note?: string | undefined;
@@ -1401,11 +1405,12 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
     } | undefined;
     socialProof?: {
         ratingAvg?: number | undefined;
-        ratingCount?: number | undefined;
         ratingBreakdown?: Record<string, number> | undefined;
+        ratingCount?: number | undefined;
         qnaCount?: number | undefined;
     } | undefined;
     reviewsAggregate?: {
+        reviewWithImagesPercent?: number | undefined;
         count?: number | undefined;
         average?: number | undefined;
         breakdown?: Record<string, number> | undefined;
@@ -1455,7 +1460,7 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
         flags?: string[] | undefined;
     } | undefined;
     aiDecision?: {
-        verdict: "buy" | "consider" | "avoid" | "unknown";
+        verdict: "avoid" | "buy" | "consider" | "unknown";
         confidence?: number | undefined;
         reasons?: {
             id: string;
@@ -1495,16 +1500,16 @@ export declare const CommerceReviewResponseSchema: z.ZodObject<{
             ratingAvg?: number | undefined;
             returnPolicy?: string | undefined;
             warranty?: string | undefined;
-            ratingCount?: number | undefined;
-            soldCount?: string | number | undefined;
-            ratingDist?: Record<string, number> | undefined;
-            qaCount?: number | undefined;
             shipping?: {
                 cod?: boolean | undefined;
                 minDays?: number | undefined;
                 maxDays?: number | undefined;
                 freeThreshold?: number | undefined;
             } | undefined;
+            ratingCount?: number | undefined;
+            soldCount?: string | number | undefined;
+            ratingDist?: Record<string, number> | undefined;
+            qaCount?: number | undefined;
         } | undefined;
         shop?: {
             shopId?: string | undefined;

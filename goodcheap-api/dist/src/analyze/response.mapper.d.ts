@@ -13,6 +13,7 @@ export declare class ResponseMapper implements ResponseMapperInterface {
     private computePriceFlags;
     private buildMarketplace;
     private buildPsychologyV2;
+    private buildAiAnalysis;
     private buildAiDecision;
     private extractYouTubeId;
     private canonicalEvidenceKey;

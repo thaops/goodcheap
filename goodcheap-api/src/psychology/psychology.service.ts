@@ -84,7 +84,7 @@ export class PsychologyService implements PsychologyInterface {
       riskReversal,
       easeToBuy,
       urgency,
-      total: psychologyScore,
+      total: trust + evidence + riskReversal + easeToBuy + urgency,
     };
   }
 }

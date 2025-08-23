@@ -11,6 +11,7 @@ const common_1 = require("@nestjs/common");
 const analyze_controller_1 = require("./analyze.controller");
 const analyze_service_1 = require("./analyze.service");
 const response_mapper_1 = require("./response.mapper");
+const simplified_response_mapper_1 = require("./simplified-response.mapper");
 const psychology_service_1 = require("../psychology/psychology.service");
 const gemini_service_1 = require("../ai/gemini.service");
 const unfurl_module_1 = require("../unfurl/unfurl.module");
@@ -33,16 +34,20 @@ exports.AnalyzeModule = AnalyzeModule = __decorate([
             },
             {
                 provide: evidence_aggregator_interface_1.EVIDENCE_AGGREGATOR_TOKEN,
-                useClass: evidence_aggregator_1.EvidenceAggregator
+                useClass: evidence_aggregator_1.EvidenceAggregator,
             },
             {
                 provide: 'ResponseMapper',
-                useClass: response_mapper_1.ResponseMapper
+                useClass: response_mapper_1.ResponseMapper,
+            },
+            {
+                provide: 'SimplifiedResponseMapper',
+                useClass: simplified_response_mapper_1.SimplifiedResponseMapper,
             },
             {
                 provide: 'GeminiService',
-                useClass: gemini_service_1.GeminiService
-            }
+                useClass: gemini_service_1.GeminiService,
+            },
         ],
         controllers: [analyze_controller_1.AnalyzeController],
         exports: [analyze_service_1.AnalyzeService],

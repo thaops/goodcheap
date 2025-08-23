@@ -22,10 +22,14 @@ export function pickJsonLdProduct(html: string): any | null {
 export function pickOpenGraph(html: string): Record<string, string> {
   const $ = cheerio.load(html);
   const og: Record<string, string> = {};
-  $('meta[property^="og:"]').each((_, el) => {
-    const key = $(el).attr('property') || '';
-    const val = $(el).attr('content') || '';
-    og[key] = val;
+  // Thu thập cả og:* và product:* để hỗ trợ price info theo test
+  $('meta[property]').each((_, el) => {
+    const key = ($(el).attr('property') || '').trim();
+    const val = ($(el).attr('content') || '').trim();
+    const k = key.toLowerCase();
+    if (k.startsWith('og:') || k.startsWith('product:')) {
+      og[key] = val;
+    }
   });
   return og;
 }

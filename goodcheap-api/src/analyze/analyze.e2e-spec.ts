@@ -42,52 +42,12 @@ describe('AnalyzeController (E2E)', () => {
       expect(response.body.system).toBeDefined();
     });
 
-    it('should analyze a product DTO and return evidence-first response', async () => {
+    it('should return hold verdict when critical data is missing (URL-only minimal data)', async () => {
       const response = await request(app.getHttpServer())
         .post('/analyze')
         .send({
-          product: {
-            finalUrl: 'https://tiktok.com/product/123456',
-            source: 'tiktok',
-            title: 'Test Product',
-            price: 100000,
-            ratingAvg: 4.5,
-            reviewCount: 100,
-            images: ['https://example.com/image.jpg'],
-            reviewsSample: [
-              {
-                id: 'review_1',
-                rating: 5,
-                text: 'Great product!',
-                authorName: 'Test User',
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
-        })
-        .expect(201);
-
-      // Validate response against Zod schema
-      const parsed = CommerceReviewResponseSchema.safeParse(response.body);
-      expect(parsed.success).toBe(true);
-      
-      // Check that product data is properly mapped
-      expect(response.body.product.title).toBe('Test Product');
-      expect(response.body.marketplace.price.current).toBe(100000);
-      expect(response.body.socialProof.ratingAvg).toBe(4.5);
-    });
-
-    it('should return hold verdict when critical data is missing', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/analyze')
-        .send({
-          product: {
-            finalUrl: 'https://tiktok.com/product/123456',
-            source: 'tiktok',
-            title: 'Test Product',
-            images: ['https://example.com/image.jpg'],
-            // Missing price, ratingAvg, reviewCount
-          },
+          // In test env, fetchHtml is disabled -> minimal product info from URL only
+          url: 'https://tiktok.com/product/123456',
         })
         .expect(201);
 

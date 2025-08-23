@@ -123,26 +123,106 @@ export class GeminiService implements AIInterface {
    */
   async searchYouTubeReviews(product: ProductDTO): Promise<any[]> {
     const DEBUG = String(process.env.GC_DEBUG_TIMING || '').toLowerCase() === '1' || String(process.env.GC_DEBUG_TIMING || '').toLowerCase() === 'true';
+    // Skip network in tests or when feature disabled
+    const env = (process.env.NODE_ENV ?? '').toLowerCase();
+    if (env === 'test') return [];
+    if ((process.env.GC_ENABLE_YOUTUBE_SEARCH ?? '1') === '0') return [];
     const apiKey = (process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
     if (!apiKey) return [];
 
     const title = (product?.title || '').trim();
     const finalUrl = product?.finalUrl || '';
-    const base = title || finalUrl || '';
-    const short = base.replace(/[\[\](){}|]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
+    
+    // Extract brand from title since ProductDTO doesn't have brand field
+    const extractBrandFromTitle = (title: string) => {
+      const tLower = title.toLowerCase();
+      if (/\bcerave\b/i.test(tLower)) return 'CeraVe';
+      // Add more brand patterns as needed
+      
+      // Fallback: use first meaningful word as potential brand
+      const tokens = title.split(/\s+/).filter(Boolean);
+      const cleanTokens = tokens.filter(t => !t.startsWith('[') && !t.startsWith('#') && !t.startsWith('('));
+      return cleanTokens[0] || tokens[0] || '';
+    };
+    
+    const brand = extractBrandFromTitle(title);
+    
+    // Extract core product keywords prioritizing brand and actual product name
+    const extractCoreProductInfo = (title: string, brand: string) => {
+      // Remove promotional text and brackets
+      const cleanTitle = title
+        .replace(/\[.*?\]/g, '')  // Remove [DEAL HOT], [SALE], etc.
+        .replace(/\(.*?\)/g, '')  // Remove parentheses
+        .replace(/\b(deal|hot|sale|giảm giá|khuyến mãi|ưu đãi)\b/gi, '') // Remove promotional words
+        .replace(/\b(cho|dành cho|phù hợp)\b/gi, '') // Remove descriptive fillers
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      // Try to extract brand and product name
+      const productKeywords: string[] = [];
+      
+      // Always include brand if available
+      if (brand) {
+        productKeywords.push(brand);
+      }
+      
+      // Extract potential product name (look for specific patterns)
+      const words = cleanTitle.split(' ');
+      
+      // Find product line/name (usually after brand or descriptive text)
+      const brandIndex = brand ? words.findIndex(word => 
+        word.toLowerCase().includes(brand.toLowerCase())
+      ) : -1;
+      
+      if (brandIndex >= 0 && brandIndex < words.length - 1) {
+        // Take 2-3 words after brand
+        const productName = words.slice(brandIndex + 1, brandIndex + 4)
+          .filter(word => !/^\d+/.test(word)) // Skip size numbers
+          .slice(0, 2)
+          .join(' ');
+        if (productName) {
+          productKeywords.push(productName);
+        }
+      } else {
+        // Look for recognizable product patterns
+        const productMatches = cleanTitle.match(/(\w+\s+\w+(?:\s+\w+)?(?=\s+\d+ML|\s+\d+G|$))/i);
+        if (productMatches) {
+          productKeywords.push(productMatches[1]);
+        }
+      }
+      
+      // If still no good keywords, use first few meaningful words
+      if (productKeywords.length === 0) {
+        const meaningfulWords = words
+          .filter(word => 
+            word.length > 2 && 
+            !/^\d+/.test(word) && 
+            !['sữa', 'rửa', 'mặt', 'cho', 'da'].includes(word.toLowerCase())
+          )
+          .slice(0, 3);
+        productKeywords.push(...meaningfulWords);
+      }
+      
+      return productKeywords.filter(Boolean).slice(0, 4).join(' ');
+    };
+    
+    const coreProduct = extractCoreProductInfo(title, brand);
+    const fallback = title || finalUrl || '';
+    const short = coreProduct || fallback.replace(/[\[\](){}|]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
+    
     const queries = Array.from(new Set([
-      `${short} review`,
-      `${short} đánh giá`,
+      `${coreProduct} review`,
+      `${coreProduct} đánh giá`,
+      `${brand} ${coreProduct.replace(brand, '').trim()} review`.trim(),
       `${short} mở hộp`,
       `${short} trên tay`,
-      `${short} so sánh`,
       `${short} unboxing`,
-      `${short} test`,
-    ].filter(q => q.trim().length > 0)));
+    ].filter(q => q.trim().length > 0 && !q.includes('undefined'))));
+    
     const maxItems = Math.max(1, Math.min(10, Number(process.env.YOUTUBE_SEARCH_MAX || 6)));
     const timeoutMs = Math.max(3000, Math.min(20000, Number(process.env.YOUTUBE_SEARCH_TIMEOUT_MS || 10000)));
     if (DEBUG) {
-      console.log('[YouTube] queries=', queries, 'max=', maxItems, 'timeoutMs=', timeoutMs);
+      console.log('[YouTube] coreProduct=', coreProduct, 'queries=', queries, 'max=', maxItems, 'timeoutMs=', timeoutMs);
     }
 
     for (const q of queries) {
@@ -186,7 +266,12 @@ export class GeminiService implements AIInterface {
             url,
           };
         });
-        const verified = await this.postValidateVideos(results.filter(r => r.url), 'youtube');
+        const verified = await this.postValidateVideos(results.filter(r => r.url), 'youtube', { 
+          product, 
+          brand, 
+          coreProduct,
+          searchQuery: q  // Add the search query for context
+        });
         if (DEBUG) console.log('[YouTube] verified count=', verified.length);
         const viOnly = verified.filter(v => this.isVietnamese(String(v.text || '')) || this.isVietnamese(String(v.authorName || '')));
         if (DEBUG) console.log('[YouTube] viOnly count=', viOnly.length);
@@ -342,6 +427,10 @@ export class GeminiService implements AIInterface {
    */
   async searchTikTokReviews(product: ProductDTO): Promise<any[]> {
     const DEBUG = String(process.env.GC_DEBUG_TIMING || '').toLowerCase() === '1' || String(process.env.GC_DEBUG_TIMING || '').toLowerCase() === 'true';
+    // Skip Playwright/browser in tests or when feature disabled
+    const env = (process.env.NODE_ENV ?? '').toLowerCase();
+    if (env === 'test') return [];
+    if ((process.env.GC_ENABLE_TIKTOK_SEARCH ?? '1') === '0') return [];
     const title = (product?.title || '').trim();
     const finalUrl = product?.finalUrl || '';
     const base = title || finalUrl || '';
@@ -755,8 +844,14 @@ export class GeminiService implements AIInterface {
     } catch { return undefined; } finally { clearTimeout(to); }
   }
 
-  private async postValidateVideos(items: any[], kind: 'youtube' | 'tiktok'): Promise<any[]> {
+  private async postValidateVideos(items: any[], kind: 'youtube' | 'tiktok', context?: { product?: any, brand?: string, coreProduct?: string, searchQuery?: string }): Promise<any[]> {
     const DEBUG = String(process.env.GC_DEBUG_TIMING || '').toLowerCase() === '1' || String(process.env.GC_DEBUG_TIMING || '').toLowerCase() === 'true';
+    
+    // Extract product context for relevance filtering
+    const brand = context?.brand || context?.product?.brand || '';
+    const coreProduct = context?.coreProduct || '';
+    const productKeywords = this.buildProductKeywords(coreProduct || context?.product?.title || '');
+    
     // 1) Whitelist + normalize
     const normalized: any[] = [];
     for (const it of items) {
@@ -765,6 +860,55 @@ export class GeminiService implements AIInterface {
         if (DEBUG) console.log('[Validate]', kind, 'drop:not-allowed', url);
         continue;
       }
+      
+      // Product relevance check for YouTube videos - STRICT filtering
+      if (kind === 'youtube' && context) {
+        const title = String(it.text || '').toLowerCase();
+        const author = String(it.authorName || '').toLowerCase();
+        const relevanceScore = this.productMatchScore(title, author, productKeywords);
+        const searchQuery = context.searchQuery ? String(context.searchQuery).toLowerCase() : '';
+        
+        // Define keywords for different products to avoid confusion
+        const unwantedProducts = [
+          'super vegitoks', 'vegitoks', 'wonder bath',
+          'jelly belif', 'belif',
+          'some by mi', 'cosrx', 'the ordinary',
+          'paula choice', 'innisfree', 'laneige'
+        ];
+        
+        // Check if the video is about a completely different product
+        const aboutDifferentProduct = unwantedProducts.some(unwanted => 
+          title.includes(unwanted) || author.includes(unwanted)
+        );
+        
+        if (aboutDifferentProduct) {
+          if (DEBUG) console.log('[Validate]', kind, 'drop:different-product', { title, unwantedProduct: unwantedProducts.find(u => title.includes(u) || author.includes(u)) });
+          continue;
+        }
+        
+        // Require strong product relevance for YouTube
+        if (relevanceScore === 0 && brand) {
+          const hasProductTerms = title.includes(brand.toLowerCase()) ||
+                                 (coreProduct && title.includes(coreProduct.toLowerCase())) ||
+                                 (searchQuery && title.includes(brand.toLowerCase()) && title.includes('review'));
+          
+          if (!hasProductTerms) {
+            if (DEBUG) console.log('[Validate]', kind, 'drop:no-product-match', { title, brand, coreProduct, relevanceScore });
+            continue;
+          }
+        }
+        
+        // Additional check: if the title contains brand name but also mentions other products,
+        // make sure it's actually about our product
+        if (brand && title.includes(brand.toLowerCase())) {
+          const otherBrandMentioned = unwantedProducts.some(other => title.includes(other));
+          if (otherBrandMentioned) {
+            if (DEBUG) console.log('[Validate]', kind, 'drop:mixed-brands', { title, brand, otherBrand: unwantedProducts.find(u => title.includes(u)) });
+            continue;
+          }
+        }
+      }
+      
       const normUrl = kind === 'youtube' ? (this.normalizeYouTubeUrl(url) || url) : url;
       const id = kind === 'youtube' ? (this.extractYouTubeId(normUrl) || it.id) : it.id;
       normalized.push({ ...it, url: normUrl, id });

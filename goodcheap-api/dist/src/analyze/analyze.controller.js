@@ -19,70 +19,66 @@ const analyze_service_1 = require("./analyze.service");
 const commerceReviewResponse_schema_1 = require("../common/schemas/commerceReviewResponse.schema");
 const common_2 = require("@nestjs/common");
 const evidence_aggregator_interface_1 = require("../common/interfaces/evidence-aggregator.interface");
+const simplified_response_mapper_1 = require("./simplified-response.mapper");
 const swagger_1 = require("@nestjs/swagger");
 let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
     analyze;
     unfurl;
     responseMapper;
+    simplifiedResponseMapper;
     geminiService;
     evidenceValidator;
     reviewsService;
     evidenceAggregator;
-    constructor(analyze, unfurl, responseMapper, geminiService, evidenceValidator, reviewsService, evidenceAggregator) {
+    constructor(analyze, unfurl, responseMapper, simplifiedResponseMapper, geminiService, evidenceValidator, reviewsService, evidenceAggregator) {
         this.analyze = analyze;
         this.unfurl = unfurl;
         this.responseMapper = responseMapper;
+        this.simplifiedResponseMapper = simplifiedResponseMapper;
         this.geminiService = geminiService;
         this.evidenceValidator = evidenceValidator;
         this.reviewsService = reviewsService;
         this.evidenceAggregator = evidenceAggregator;
     }
     logger = new common_1.Logger(AnalyzeController_1.name);
-    get debugTiming() { return (process.env.GC_DEBUG_TIMING ?? '0') === '1'; }
-    now() { return Date.now(); }
-    dur(msStart) { return Date.now() - msStart; }
-    async analyzeUrl(body) {
+    get debugTiming() {
+        return (process.env.GC_DEBUG_TIMING ?? '0') === '1';
+    }
+    now() {
+        return Date.now();
+    }
+    dur(msStart) {
+        return Date.now() - msStart;
+    }
+    async analyzeUrl(body, format) {
         const LLM_ENABLED = (process.env.GC_ENABLE_LLM ?? 'false') === 'true';
         const FALLBACK = (process.env.ANALYZE_FALLBACK ?? '0') === '1';
-        const hasGemini = !!this.geminiService && typeof this.geminiService.enrichAnalysis === 'function';
+        const hasGemini = !!this.geminiService &&
+            typeof this.geminiService.enrichAnalysis === 'function';
         const CAN_USE_LLM = LLM_ENABLED && !FALLBACK && hasGemini;
-        const LLM_STRICT = LLM_ENABLED && ((process.env.GC_LLM_STRICT ?? 'true') === 'true');
-        const TTK_ENABLED = ((process.env.GC_ENABLE_TIKTOK_SEARCH ?? '1') === '1');
-        const YT_ENABLED = ((process.env.GC_ENABLE_YOUTUBE_SEARCH ?? '1') === '1');
-        const AUTO_SCRAPE = ((process.env.GC_AUTO_SCRAPE_REVIEWS ?? '0') === '1');
-        const product = body.product ?? (body.url ? await this.unfurl.fromUrl(body.url) : null);
+        const LLM_STRICT = LLM_ENABLED && (process.env.GC_LLM_STRICT ?? 'true') === 'true';
+        const TTK_ENABLED = (process.env.GC_ENABLE_TIKTOK_SEARCH ?? '1') === '1';
+        const YT_ENABLED = (process.env.GC_ENABLE_YOUTUBE_SEARCH ?? '1') === '1';
+        const AUTO_SCRAPE = (process.env.GC_AUTO_SCRAPE_REVIEWS ?? '0') === '1';
+        const product = body.url ? await this.unfurl.fromUrl(body.url) : null;
         if (!product) {
-            throw new Error('Require "url" or "product" in body');
-        }
-        if (typeof body.html === 'string' && body.html.trim().length > 0) {
-            try {
-                const tH = this.now();
-                if (typeof this.reviewsService?.extractTikTokFromHtml === 'function') {
-                    const partial = await this.reviewsService.extractTikTokFromHtml(body.html);
-                    if (partial && typeof partial === 'object') {
-                        Object.assign(product, partial);
-                    }
-                }
-                if (this.debugTiming)
-                    this.logger.log(`[timing] html.parse: ${this.dur(tH)}ms enriched=${product?.title ? 'title' : ''}${product?.price ? ',price' : ''}${product?.ratingAvg ? ',rating' : ''}`);
-            }
-            catch (e) {
-                if (this.debugTiming)
-                    this.logger.warn(`[timing] html.parse: failed ${e?.message || e}`);
-            }
+            throw new Error('Require "url" in body');
         }
         let productForAnalyze = { ...product };
         const collectedVideos = [];
         try {
-            const urlForId = productForAnalyze.finalUrl || productForAnalyze.canonicalUrl || '';
-            if ((!productForAnalyze.productId || productForAnalyze.productId === '') && urlForId.includes('tiktok.com')) {
-                const m = urlForId.match(/\/product\/(\d{8,})/i);
-                if (m?.[1])
-                    productForAnalyze.productId = m[1];
+            const urlForId = productForAnalyze.finalUrl ||
+                productForAnalyze.canonicalUrl ||
+                '';
+            if (!productForAnalyze.productId || productForAnalyze.productId === '') {
+                const pid = this.productIdFromUrl(urlForId);
+                if (pid)
+                    productForAnalyze.productId = pid;
             }
         }
         catch { }
-        if (TTK_ENABLED && typeof this.geminiService?.searchTikTokReviews === 'function') {
+        if (TTK_ENABLED &&
+            typeof this.geminiService?.searchTikTokReviews === 'function') {
             const tTk = this.now();
             try {
                 const timeoutMs = Math.max(5000, Math.min(30000, Number(process.env.TIKTOK_SEARCH_TIMEOUT_MS || 12000)));
@@ -90,14 +86,24 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                     .searchTikTokReviews(productForAnalyze)
                     .then((arr) => (Array.isArray(arr) ? arr : []))
                     .catch(() => []);
+                let toTk;
+                const timeoutPromiseTk = new Promise((resolve) => {
+                    toTk = setTimeout(() => resolve('__timeout__'), timeoutMs);
+                });
                 const timed = await Promise.race([
                     tiktokPromise,
-                    new Promise((resolve) => setTimeout(() => resolve('__timeout__'), timeoutMs)),
+                    timeoutPromiseTk,
                 ]);
+                if (toTk)
+                    clearTimeout(toTk);
                 const tiktokReviews = timed === '__timeout__' ? [] : timed;
                 if (tiktokReviews.length) {
-                    const existing = Array.isArray(product.reviewsSample) ? product.reviewsSample : [];
-                    const merged = [...existing, ...tiktokReviews.map((r, i) => ({
+                    const existing = Array.isArray(product.reviewsSample)
+                        ? product.reviewsSample
+                        : [];
+                    const merged = [
+                        ...existing,
+                        ...tiktokReviews.map((r, i) => ({
                             id: String(r.id ?? `tt_${i}`),
                             rating: typeof r.rating === 'number' ? r.rating : undefined,
                             text: String(r.text || r.title || r.url || ''),
@@ -106,8 +112,12 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                             source: 'tiktok_video',
                             createdAt: r.date || r.createdAt || undefined,
                             url: r.url,
-                        }))];
-                    productForAnalyze = { ...productForAnalyze, reviewsSample: merged };
+                        })),
+                    ];
+                    productForAnalyze = {
+                        ...productForAnalyze,
+                        reviewsSample: merged,
+                    };
                     for (const r of tiktokReviews) {
                         if (r?.url && typeof r.url === 'string') {
                             collectedVideos.push({ url: r.url, type: 'creator_review' });
@@ -126,7 +136,8 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
             const reason = !TTK_ENABLED ? 'DISABLED' : 'NO_METHOD';
             this.logger.log(`[timing] tiktok.search: skipped (${reason})`);
         }
-        if (YT_ENABLED && typeof this.geminiService?.searchYouTubeReviews === 'function') {
+        if (YT_ENABLED &&
+            typeof this.geminiService?.searchYouTubeReviews === 'function') {
             const tYt = this.now();
             try {
                 const timeoutMs = Math.max(4000, Math.min(20000, Number(process.env.YOUTUBE_SEARCH_TIMEOUT_MS || 8000)));
@@ -134,13 +145,21 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                     .searchYouTubeReviews(productForAnalyze)
                     .then((arr) => (Array.isArray(arr) ? arr : []))
                     .catch(() => []);
+                let toYt;
+                const timeoutPromiseYt = new Promise((resolve) => {
+                    toYt = setTimeout(() => resolve('__timeout__'), timeoutMs);
+                });
                 const timed = await Promise.race([
                     ytPromise,
-                    new Promise((resolve) => setTimeout(() => resolve('__timeout__'), timeoutMs)),
+                    timeoutPromiseYt,
                 ]);
+                if (toYt)
+                    clearTimeout(toYt);
                 const ytReviews = timed === '__timeout__' ? [] : timed;
                 if (ytReviews.length) {
-                    const existing = Array.isArray(productForAnalyze.reviewsSample) ? productForAnalyze.reviewsSample : [];
+                    const existing = Array.isArray(productForAnalyze.reviewsSample)
+                        ? productForAnalyze.reviewsSample
+                        : [];
                     const seen = new Set(existing.map((r) => r.url || r.text));
                     const mapped = ytReviews.map((r, i) => ({
                         id: String(r.id ?? `yt_${i}`),
@@ -162,7 +181,10 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                         return true;
                     });
                     const merged = [...existing, ...deduped];
-                    productForAnalyze = { ...productForAnalyze, reviewsSample: merged };
+                    productForAnalyze = {
+                        ...productForAnalyze,
+                        reviewsSample: merged,
+                    };
                     for (const r of ytReviews) {
                         if (r?.url && typeof r.url === 'string') {
                             collectedVideos.push({ url: r.url, type: 'creator_review' });
@@ -182,7 +204,9 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
             this.logger.log(`[timing] youtube.search: skipped (${reason})`);
         }
         try {
-            const existingVideos = Array.isArray(productForAnalyze.videos) ? productForAnalyze.videos : [];
+            const existingVideos = Array.isArray(productForAnalyze.videos)
+                ? productForAnalyze.videos
+                : [];
             const mergedVideos = [...existingVideos, ...collectedVideos];
             const uniq = new Map();
             for (const v of mergedVideos) {
@@ -203,7 +227,9 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                     const p = url.pathname.toLowerCase();
                     const isTikTokVideo = h.endsWith('tiktok.com') && /\/video\//.test(p);
                     const isTikTokProduct = h.endsWith('tiktok.com') && /\/view\/product\//.test(p);
-                    const isYouTubeWatch = (h.endsWith('youtube.com') && (p === '/watch' || p.startsWith('/shorts'))) || h === 'youtu.be';
+                    const isYouTubeWatch = (h.endsWith('youtube.com') &&
+                        (p === '/watch' || p.startsWith('/shorts'))) ||
+                        h === 'youtu.be';
                     return (isTikTokVideo || isYouTubeWatch) && !isTikTokProduct;
                 }
                 catch {
@@ -212,31 +238,56 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
             };
             productForAnalyze.videos = productForAnalyze.videos
                 .filter((v) => typeof v?.url === 'string' && isVideoUrl(v.url))
-                .filter((v, i, arr) => arr.findIndex(x => x?.url === v?.url) === i);
+                .filter((v, i, arr) => arr.findIndex((x) => x?.url === v?.url) === i);
         }
-        const isTikTok = ((productForAnalyze.finalUrl || productForAnalyze.canonicalUrl || '')).includes('tiktok.com');
-        if (AUTO_SCRAPE && isTikTok && typeof this.reviewsService?.extractReviews === 'function') {
+        const isTikTok = (productForAnalyze.finalUrl ||
+            productForAnalyze.canonicalUrl ||
+            '').includes('tiktok.com');
+        if (AUTO_SCRAPE &&
+            isTikTok &&
+            typeof this.reviewsService?.extractReviews === 'function') {
             const tPl = this.now();
             try {
                 const timeoutMs = Math.max(5000, Math.min(30000, Number(process.env.REVIEWS_SCRAPE_TIMEOUT_MS || 12000)));
-                const scrapePromise = this.reviewsService.extractReviews(productForAnalyze).then(arr => Array.isArray(arr) ? arr : []).catch(() => []);
+                const scrapePromise = this.reviewsService
+                    .extractReviews(productForAnalyze)
+                    .then((arr) => (Array.isArray(arr) ? arr : []))
+                    .catch(() => []);
+                let toPl;
+                const timeoutPromisePl = new Promise((resolve) => {
+                    toPl = setTimeout(() => resolve('__timeout__'), timeoutMs);
+                });
                 const timed = await Promise.race([
                     scrapePromise,
-                    new Promise((resolve) => setTimeout(() => resolve('__timeout__'), timeoutMs)),
+                    timeoutPromisePl,
                 ]);
+                if (toPl)
+                    clearTimeout(toPl);
                 const platReviews = timed === '__timeout__' ? [] : timed;
                 if (platReviews.length) {
-                    const existing = Array.isArray(productForAnalyze.reviewsSample) ? productForAnalyze.reviewsSample : [];
-                    const merged = [...existing, ...platReviews.map((r, i) => ({
+                    const existing = Array.isArray(productForAnalyze.reviewsSample)
+                        ? productForAnalyze.reviewsSample
+                        : [];
+                    const merged = [
+                        ...existing,
+                        ...platReviews.map((r, i) => ({
                             id: String(r.id ?? `pf_${i}`),
-                            rating: typeof r.rating === 'number' ? r.rating : (typeof r.rating === 'string' ? Number(r.rating) : undefined),
+                            rating: typeof r.rating === 'number'
+                                ? r.rating
+                                : typeof r.rating === 'string'
+                                    ? Number(r.rating)
+                                    : undefined,
                             text: String(r.text || ''),
                             images: Array.isArray(r.images) ? r.images : undefined,
                             authorName: r.authorName || r.author || undefined,
                             source: 'platform',
                             createdAt: r.date || r.createdAt || undefined,
-                        }))];
-                    productForAnalyze = { ...productForAnalyze, reviewsSample: merged };
+                        })),
+                    ];
+                    productForAnalyze = {
+                        ...productForAnalyze,
+                        reviewsSample: merged,
+                    };
                 }
                 if (this.debugTiming)
                     this.logger.log(`[timing] platform.reviews: ${this.dur(tPl)}ms found=${platReviews.length}`);
@@ -250,15 +301,24 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
             const reason = !AUTO_SCRAPE ? 'DISABLED' : 'NO_METHOD_OR_NOT_TIKTOK';
             this.logger.log(`[timing] platform.reviews: skipped (${reason})`);
         }
-        if (isTikTok && typeof this.reviewsService?.extractTikTokMeta === 'function') {
+        if (isTikTok) {
             const tMt = this.now();
             try {
                 const timeoutMs = Math.max(5000, Math.min(30000, Number(process.env.REVIEWS_SCRAPE_TIMEOUT_MS || 12000)));
-                const metaPromise = this.reviewsService.extractTikTokMeta(productForAnalyze).then((m) => (m && typeof m === 'object') ? m : {}).catch(() => ({}));
+                const metaPromise = this.reviewsService
+                    .extractTikTokMeta(productForAnalyze)
+                    .then((m) => (m && typeof m === 'object' ? m : {}))
+                    .catch(() => ({}));
+                let toMt;
+                const timeoutPromiseMt = new Promise((resolve) => {
+                    toMt = setTimeout(() => resolve('__timeout__'), timeoutMs);
+                });
                 const timed = await Promise.race([
                     metaPromise,
-                    new Promise((resolve) => setTimeout(() => resolve('__timeout__'), timeoutMs)),
+                    timeoutPromiseMt,
                 ]);
+                if (toMt)
+                    clearTimeout(toMt);
                 const meta = timed === '__timeout__' ? {} : timed;
                 if (meta && Object.keys(meta).length) {
                     productForAnalyze = { ...productForAnalyze, ...meta };
@@ -279,14 +339,19 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
         if (CAN_USE_LLM) {
             const t1 = this.now();
             const nowIso = new Date().toISOString();
-            const rawUrl = productForAnalyze.finalUrl || productForAnalyze.canonicalUrl;
-            const baseEvidence = rawUrl ? [{
-                    id: 'prod:page',
-                    type: 'productPage',
-                    url: rawUrl,
-                    scrapedAt: nowIso,
-                    reliability: 0.35,
-                }] : [];
+            const rawUrl = productForAnalyze.finalUrl ||
+                productForAnalyze.canonicalUrl;
+            const baseEvidence = rawUrl
+                ? [
+                    {
+                        id: 'prod:page',
+                        type: 'productPage',
+                        url: rawUrl,
+                        scrapedAt: nowIso,
+                        reliability: 0.35,
+                    },
+                ]
+                : [];
             const videoEvidence = Array.isArray(productForAnalyze.videos)
                 ? productForAnalyze.videos.map((v, idx) => ({
                     id: `vid:${idx}`,
@@ -309,7 +374,13 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
         }
         else {
             if (this.debugTiming) {
-                const reason = !LLM_ENABLED ? 'LLM_DISABLED' : FALLBACK ? 'FALLBACK_ON' : !hasGemini ? 'GEMINI_UNAVAILABLE' : 'UNKNOWN';
+                const reason = !LLM_ENABLED
+                    ? 'LLM_DISABLED'
+                    : FALLBACK
+                        ? 'FALLBACK_ON'
+                        : !hasGemini
+                            ? 'GEMINI_UNAVAILABLE'
+                            : 'UNKNOWN';
                 this.logger.log(`[timing] gemini.enrichAnalysis: skipped (${reason})`);
             }
         }
@@ -336,28 +407,30 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
         }
         try {
             const tAg = this.now();
-            const projected = Array.isArray(response.evidence) ? response.evidence.map((e) => {
-                const url = typeof e.url === 'string' ? e.url : undefined;
-                let source = e.source;
-                if (!source && url) {
-                    try {
-                        source = new URL(url).hostname;
+            const projected = Array.isArray(response.evidence)
+                ? response.evidence.map((e) => {
+                    const url = typeof e.url === 'string' ? e.url : undefined;
+                    let source = e.source;
+                    if (!source && url) {
+                        try {
+                            source = new URL(url).hostname;
+                        }
+                        catch { }
                     }
-                    catch { }
-                }
-                return {
-                    id: String(e.id || ''),
-                    type: String(e.type || 'unknown'),
-                    source: String(source || 'unknown'),
-                    content: String(url || e.note || e.type || ''),
-                    timestamp: typeof e.scrapedAt === 'string' ? e.scrapedAt : undefined,
-                };
-            }) : [];
+                    return {
+                        id: String(e.id || ''),
+                        type: String(e.type || 'unknown'),
+                        source: String(source || 'unknown'),
+                        content: String(url || e.note || e.type || ''),
+                        timestamp: typeof e.scrapedAt === 'string' ? e.scrapedAt : undefined,
+                    };
+                })
+                : [];
             const aggregated = this.evidenceAggregator.aggregateEvidence(projected);
             const contradictions = this.evidenceAggregator.crossReferenceEvidence(aggregated);
             const diagnostics = this.evidenceAggregator.generateDiagnostics(aggregated);
-            const diagMsgs = diagnostics.map(d => `EV:${d.code} (${d.severity}) - ${d.message}`);
-            const contraMsgs = contradictions.map(c => `EV:contradiction between ${c.evidenceId1} and ${c.evidenceId2}: ${c.contradiction}`);
+            const diagMsgs = diagnostics.map((d) => `EV:${d.code} (${d.severity}) - ${d.message}`);
+            const contraMsgs = contradictions.map((c) => `EV:contradiction between ${c.evidenceId1} and ${c.evidenceId2}: ${c.contradiction}`);
             if (diagMsgs.length || contraMsgs.length) {
                 response.system.warnings = [
                     ...(response.system.warnings ?? []),
@@ -388,14 +461,28 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                 ...(response.system.warnings ?? []),
                 'Schema validation failed - response may be incomplete',
             ];
+            if (format === 'simplified') {
+                const t5 = this.now();
+                const simplifiedResponse = this.simplifiedResponseMapper.transform(response);
+                if (this.debugTiming)
+                    this.logger.log(`[timing] simplifiedResponseMapper.transform: ${this.dur(t5)}ms`);
+                return simplifiedResponse;
+            }
             return response;
+        }
+        if (format === 'simplified') {
+            const t5 = this.now();
+            const simplifiedResponse = this.simplifiedResponseMapper.transform(parsed.data);
+            if (this.debugTiming)
+                this.logger.log(`[timing] simplifiedResponseMapper.transform: ${this.dur(t5)}ms`);
+            return simplifiedResponse;
         }
         if (this.debugTiming)
             this.logger.log(`[timing] total: ${this.dur(t0)}ms`);
         return parsed.data;
     }
     alignAspectsToRubric(aspects, _requiredNames) {
-        return (aspects || []).map(a => ({
+        return (aspects || []).map((a) => ({
             ...a,
             name: this.normalizeAspectName(a?.name) || a?.name,
             metrics: Array.isArray(a?.metrics) ? a.metrics : [],
@@ -404,21 +491,49 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
         }));
     }
     buildAspectScores(aspects, rubricWeights) {
-        return aspects.map(a => {
+        return aspects.map((a) => {
             const name = a.name;
             const scoreRaw = typeof a.score === 'number' ? a.score : undefined;
-            const scoreWeighted = typeof scoreRaw === 'number' ? (scoreRaw / 5) * (rubricWeights[name] ?? 0) : undefined;
+            const scoreWeighted = typeof scoreRaw === 'number'
+                ? (scoreRaw / 5) *
+                    (rubricWeights[name] ?? 0)
+                : undefined;
             return { name, scoreRaw, scoreWeighted };
         });
     }
     defaultMetricsForAspect(name) {
         return [
-            { name: 'positive_mentions', observed: undefined, expected: undefined, unit: 'count' },
-            { name: 'negative_mentions', observed: undefined, expected: undefined, unit: 'count' },
-            { name: 'neutral_mentions', observed: undefined, expected: undefined, unit: 'count' },
-            { name: 'avg_sentiment', observed: undefined, expected: undefined, unit: 'score' },
-            { name: 'supporting_evidence', observed: undefined, expected: undefined, unit: 'count' },
-        ].map(m => ({ ...m, aspect: name }));
+            {
+                name: 'positive_mentions',
+                observed: undefined,
+                expected: undefined,
+                unit: 'count',
+            },
+            {
+                name: 'negative_mentions',
+                observed: undefined,
+                expected: undefined,
+                unit: 'count',
+            },
+            {
+                name: 'neutral_mentions',
+                observed: undefined,
+                expected: undefined,
+                unit: 'count',
+            },
+            {
+                name: 'avg_sentiment',
+                observed: undefined,
+                expected: undefined,
+                unit: 'score',
+            },
+            {
+                name: 'supporting_evidence',
+                observed: undefined,
+                expected: undefined,
+                unit: 'count',
+            },
+        ].map((m) => ({ ...m, aspect: name }));
     }
     normalizeAspectName(name) {
         if (!name)
@@ -426,7 +541,7 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
         const mapping = {
             'tổng quan': 'overview',
             'chất lượng âm thanh': 'soundQuality',
-            'pin': 'battery',
+            pin: 'battery',
             'micro trong gọi': 'micCall',
             'chống ồn': 'noiseControl',
             'độ thoải mái': 'comfortFit',
@@ -462,8 +577,13 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
                 const params = new URLSearchParams(url.search);
                 return params.get('pid') || undefined;
             }
-            const m = url.pathname.match(/product\/(\d+)/) || url.pathname.match(/(\d{6,})/);
-            return m?.[1];
+            if (url.hostname.includes('tiktok')) {
+                const m = url.pathname.match(/(?:^|\/)product\/(\d+)/) ||
+                    url.pathname.match(/(?:^|\/)view\/product\/(\d+)/) ||
+                    url.pathname.match(/(\d{8,})/);
+                return m?.[1];
+            }
+            return undefined;
         }
         catch {
             return undefined;
@@ -471,25 +591,54 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
     }
     buildDataIntegrity(params) {
         const issues = [];
-        if (typeof params.overallScore === 'number' && params.overallScore <= 60 && params.verdict === 'buy') {
-            issues.push({ code: 'verdict_signal_divergence', severity: 'high', message: 'Signals may diverge from the current verdict; please recheck scoring and evidence.', paths: ['$.analysis.overallScore', '$.decision.verdict'] });
+        if (typeof params.overallScore === 'number' &&
+            params.overallScore <= 60 &&
+            params.verdict === 'buy') {
+            issues.push({
+                code: 'verdict_signal_divergence',
+                severity: 'high',
+                message: 'Signals may diverge from the current verdict; please recheck scoring and evidence.',
+                paths: ['$.analysis.overallScore', '$.decision.verdict'],
+            });
         }
-        const names = new Set((params.aspects || []).map(a => a.name));
-        const missing = params.requiredAspects.filter(n => !names.has(n));
+        const names = new Set((params.aspects || []).map((a) => a.name));
+        const missing = params.requiredAspects.filter((n) => !names.has(n));
         if (missing.length) {
-            issues.push({ code: 'aspects_schema_mismatch', severity: 'medium', message: `Thiếu khía cạnh: ${missing.join(', ')}`, paths: ['$.aspects', '$.rubric.weights'] });
+            issues.push({
+                code: 'aspects_schema_mismatch',
+                severity: 'medium',
+                message: `Thiếu khía cạnh: ${missing.join(', ')}`,
+                paths: ['$.aspects', '$.rubric.weights'],
+            });
         }
         if (!params.citationsCount || params.citationsCount <= 0) {
-            issues.push({ code: 'empty_citations', severity: 'low', message: 'Thiếu citations trong aiAnalysis', paths: ['$.aiAnalysis.citations'] });
+            issues.push({
+                code: 'empty_citations',
+                severity: 'low',
+                message: 'Thiếu citations trong aiAnalysis',
+                paths: ['$.aiAnalysis.citations'],
+            });
         }
         if (!params.canonicalUrl) {
-            issues.push({ code: 'missing_canonical_url', severity: 'high', message: 'Thiếu canonicalUrl đã sanitize.', paths: ['$.product.canonicalUrl'] });
+            issues.push({
+                code: 'missing_canonical_url',
+                severity: 'high',
+                message: 'Thiếu canonicalUrl đã sanitize.',
+                paths: ['$.product.canonicalUrl'],
+            });
         }
         try {
-            const evArr = (params.evidence && Array.isArray(params.evidence)) ? params.evidence : [];
+            const evArr = params.evidence && Array.isArray(params.evidence)
+                ? params.evidence
+                : [];
             const uniqTypes = new Set(evArr.map((e) => e.type));
             if (uniqTypes.size > 0 && uniqTypes.size < 3) {
-                issues.push({ code: 'insufficient_source_diversity', severity: 'medium', message: 'Cần ít nhất 3 nguồn độc lập (productPage, marketplace khác, review độc lập).', paths: ['$.evidence[*].type'] });
+                issues.push({
+                    code: 'insufficient_source_diversity',
+                    severity: 'medium',
+                    message: 'Cần ít nhất 3 nguồn độc lập (productPage, marketplace khác, review độc lập).',
+                    paths: ['$.evidence[*].type'],
+                });
             }
         }
         catch { }
@@ -497,17 +646,32 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
             const pr = params.pricing;
             const hasPrice = pr && typeof pr.currentPrice === 'number';
             const seg = pr?.segment;
-            if (!hasPrice && (pr !== undefined) && (!seg || seg === 'unknown')) {
-                issues.push({ code: 'missing_pricing_segment', severity: 'medium', message: 'Thiếu pricing.segment khi currentPrice=null.', paths: ['$.pricing.segment'] });
+            if (!hasPrice && pr !== undefined && (!seg || seg === 'unknown')) {
+                issues.push({
+                    code: 'missing_pricing_segment',
+                    severity: 'medium',
+                    message: 'Thiếu pricing.segment khi currentPrice=null.',
+                    paths: ['$.pricing.segment'],
+                });
             }
         }
         catch { }
-        const schemaViolationCodes = new Set(['aspects_schema_mismatch', 'invalid_metric_direction', 'mixed_target_types']);
-        const hasSchemaViolation = issues.some(i => schemaViolationCodes.has(i.code));
-        const status = hasSchemaViolation ? 'invalid' : (issues.length ? 'partial' : 'valid');
-        const totalMetrics = (params.aspects || []).reduce((acc, a) => acc + ((a.metrics?.length) || 0), 0) || 0;
-        const observedCount = (params.aspects || []).reduce((acc, a) => acc + ((a.metrics || []).filter((m) => m.observed != null).length), 0);
-        const completeness = totalMetrics ? Math.round((observedCount / totalMetrics) * 100) : 0;
+        const schemaViolationCodes = new Set([
+            'aspects_schema_mismatch',
+            'invalid_metric_direction',
+            'mixed_target_types',
+        ]);
+        const hasSchemaViolation = issues.some((i) => schemaViolationCodes.has(i.code));
+        const status = hasSchemaViolation
+            ? 'invalid'
+            : issues.length
+                ? 'partial'
+                : 'valid';
+        const totalMetrics = (params.aspects || []).reduce((acc, a) => acc + (a.metrics?.length || 0), 0) || 0;
+        const observedCount = (params.aspects || []).reduce((acc, a) => acc + (a.metrics || []).filter((m) => m.observed != null).length, 0);
+        const completeness = totalMetrics
+            ? Math.round((observedCount / totalMetrics) * 100)
+            : 0;
         return {
             status,
             issues,
@@ -522,33 +686,135 @@ let AnalyzeController = AnalyzeController_1 = class AnalyzeController {
 };
 exports.AnalyzeController = AnalyzeController;
 __decorate([
+    (0, swagger_1.ApiQuery)({
+        name: 'format',
+        required: false,
+        description: 'Response format: "simplified" cho cấu trúc đơn giản hơn, mặc định là "detailed"',
+        enum: ['detailed', 'simplified'],
+        example: 'simplified',
+    }),
     (0, swagger_1.ApiBody)({
-        description: 'Cung cấp một trong hai: url (kèm html tùy chọn) hoặc product đã được unfurl',
+        description: 'Chỉ cần cung cấp url sản phẩm. Backend sẽ tự fetch và parse dữ liệu.',
         required: true,
+        schema: {
+            description: 'Gửi duy nhất một object với field url.',
+            type: 'object',
+            properties: {
+                url: {
+                    type: 'string',
+                    format: 'uri',
+                    example: 'https://vt.tiktok.com/...',
+                },
+            },
+            required: ['url'],
+            examples: {
+                byUrlOnly: {
+                    summary: 'Chỉ gửi URL (khuyến nghị)',
+                    value: {
+                        url: 'https://vt.tiktok.com/ZSAd4U7QN/',
+                    },
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Phân tích sản phẩm và review (ưu tiên TikTok)',
+        description: `Flow xử lý:
+    1) unfurl từ URL để lấy metadata chuẩn.
+    2) Nếu là TikTok: gọi reviewsService.extractTikTokMeta để đọc giá/đánh giá từ network JSON (không scale VND sai, tôn trọng clamp giá VND).
+    3) Tuỳ ENV: có thể tìm video TikTok/YouTube liên quan và/hoặc scrape review platform.
+    4) Tổng hợp phân tích, ánh xạ về evidence-first response.`,
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        description: 'Kết quả phân tích sản phẩm. Mặc định trả về detailed format (evidence-first response), có thể chọn simplified format bằng ?format=simplified',
         schema: {
             oneOf: [
                 {
-                    type: 'object',
-                    properties: {
-                        url: { type: 'string', format: 'uri', example: 'https://vt.tiktok.com/...' },
-                        html: { type: 'string', description: 'Tùy chọn: raw HTML TikTok để enrich nhanh' },
+                    title: 'Detailed Response (mặc định)',
+                    example: {
+                        schemaVersion: '1.1.0',
+                        meta: {
+                            platform: 'tiktok',
+                            locale: 'vi-VN',
+                            currency: 'VND',
+                            timestamp: '2025-08-23T07:54:04.752Z',
+                            productId: '1729716558552467894',
+                        },
+                        product: {
+                            title: 'CeraVe Foaming Cleanser 236ML',
+                            images: ['https://...img1.jpg'],
+                            canonicalUrl: 'https://www.tiktok.com/view/product/1729716558552467894',
+                        },
+                        aiAnalysis: {
+                            verdict: 'consider',
+                            confidence: 0.54,
+                            reasons: ['Tỉ lệ review có ảnh/video: 100%'],
+                        },
                     },
-                    required: ['url'],
                 },
                 {
-                    type: 'object',
-                    properties: {
-                        product: { type: 'object', description: 'Đối tượng ProductDTO đã có sẵn thông tin' },
+                    title: 'Simplified Response (?format=simplified)',
+                    example: {
+                        product: {
+                            id: '1729716558552467894',
+                            title: 'CeraVe Foaming Cleanser 236ML',
+                            brand: 'CeraVe',
+                            images: ['https://...img1.jpg'],
+                            canonicalUrl: 'https://www.tiktok.com/view/product/1729716558552467894',
+                        },
+                        pricing: {
+                            currency: 'VND',
+                            availability: 'unknown',
+                        },
+                        reviews: {
+                            totalCount: 6,
+                            items: [],
+                        },
+                        reviewSummary: {
+                            topPros: ['Sản phẩm có tiêu đề rõ ràng'],
+                            topCons: ['Không có thông tin giá'],
+                            topics: [],
+                            reviewWithMediaPercent: 1,
+                        },
+                        policies: {},
+                        aiAnalysis: {
+                            verdict: 'hold',
+                            confidence: 54,
+                            reasons: ['Tỉ lệ review có ảnh/video: 100%'],
+                            overallScore: 2,
+                            trustScore: 2,
+                            evidenceScore: 0,
+                        },
+                        evidence: {
+                            productPage: 'https://vt.tiktok.com/ZSAd4U7QN/',
+                            linkedVideos: [],
+                            reliability: 0.35,
+                        },
+                        meta: {
+                            platform: 'tiktok',
+                            locale: 'vi-VN',
+                            timestamp: '2025-08-23T07:54:04.752Z',
+                        },
                     },
-                    required: ['product'],
                 },
             ],
         },
     }),
+    (0, swagger_1.ApiBadRequestResponse)({
+        description: 'Body JSON không hợp lệ',
+        schema: {
+            example: {
+                message: "Expected ',' or '}' after property value in JSON at position 117",
+                error: 'Bad Request',
+                statusCode: 400,
+            },
+        },
+    }),
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Query)('format')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], AnalyzeController.prototype, "analyzeUrl", null);
 exports.AnalyzeController = AnalyzeController = AnalyzeController_1 = __decorate([
@@ -556,10 +822,11 @@ exports.AnalyzeController = AnalyzeController = AnalyzeController_1 = __decorate
     (0, common_1.Controller)('analyze'),
     __param(1, (0, common_1.Inject)('UnfurlService')),
     __param(2, (0, common_1.Inject)('ResponseMapper')),
-    __param(3, (0, common_1.Inject)('GeminiService')),
-    __param(4, (0, common_1.Inject)('EvidenceValidator')),
-    __param(5, (0, common_1.Inject)('ReviewsService')),
-    __param(6, (0, common_1.Inject)(evidence_aggregator_interface_1.EVIDENCE_AGGREGATOR_TOKEN)),
-    __metadata("design:paramtypes", [analyze_service_1.AnalyzeService, Object, Object, Object, Object, Object, Object])
+    __param(3, (0, common_1.Inject)('SimplifiedResponseMapper')),
+    __param(4, (0, common_1.Inject)('GeminiService')),
+    __param(5, (0, common_1.Inject)('EvidenceValidator')),
+    __param(6, (0, common_1.Inject)('ReviewsService')),
+    __param(7, (0, common_1.Inject)(evidence_aggregator_interface_1.EVIDENCE_AGGREGATOR_TOKEN)),
+    __metadata("design:paramtypes", [analyze_service_1.AnalyzeService, Object, Object, simplified_response_mapper_1.SimplifiedResponseMapper, Object, Object, Object, Object])
 ], AnalyzeController);
 //# sourceMappingURL=analyze.controller.js.map

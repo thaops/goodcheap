@@ -25,8 +25,62 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
     }
     async extractTikTokMeta(product) {
         const url = product.finalUrl || product?.canonicalUrl || '';
-        if (!url || !/tiktok\.com\//i.test(url))
+        this.logger.log(`extractTikTokMeta: Processing URL: ${url}`);
+        if (!url || !/tiktok\.com\//i.test(url)) {
+            this.logger.warn(`extractTikTokMeta: Invalid or missing TikTok URL: ${url}`);
             return {};
+        }
+        const env = (process.env.NODE_ENV ?? '').toLowerCase();
+        if (env === 'test') {
+            this.logger.log('extractTikTokMeta: disabled in test env');
+            return {};
+        }
+        this.logger.log('extractTikTokMeta: Starting Playwright approach...');
+        const playwrightResult = await this.extractTikTokMetaWithPlaywright(url);
+        this.logger.log(`extractTikTokMeta: Playwright result: ${JSON.stringify(playwrightResult)}`);
+        if (!playwrightResult || (Object.keys(playwrightResult).length === 0)) {
+            this.logger.log('extractTikTokMeta: Playwright failed or returned empty, trying HTTP fallback');
+            const httpResult = await this.extractTikTokMetaWithHttp(url);
+            this.logger.log(`extractTikTokMeta: HTTP fallback result: ${JSON.stringify(httpResult)}`);
+            return httpResult;
+        }
+        this.logger.log(`extractTikTokMeta: Returning Playwright result: ${JSON.stringify(playwrightResult)}`);
+        return playwrightResult;
+    }
+    async extractTikTokMetaWithHttp(url) {
+        this.logger.log(`extractTikTokMetaWithHttp: Starting HTTP request to ${url}`);
+        try {
+            const { default: got } = await import('got');
+            this.logger.log('extractTikTokMetaWithHttp: Got module imported, making HTTP request...');
+            const html = await got(url, {
+                headers: {
+                    'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'accept-language': 'vi-VN,vi;q=0.9,en;q=0.8',
+                    'cache-control': 'no-cache',
+                },
+                timeout: { request: 10000 },
+                followRedirect: true,
+                maxRedirects: 5,
+            }).text();
+            this.logger.log(`extractTikTokMetaWithHttp: Received HTML response, length: ${html?.length || 0}`);
+            if (!html || html.length < 100) {
+                this.logger.warn('extractTikTokMetaWithHttp: received empty or very short HTML response');
+                return {};
+            }
+            this.logger.log(`extractTikTokMetaWithHttp: HTML snippet: ${html.substring(0, 500)}...`);
+            this.logger.log('extractTikTokMetaWithHttp: Calling extractTikTokFromHtml...');
+            const result = await this.extractTikTokFromHtml(html);
+            this.logger.log(`extractTikTokMetaWithHttp: extractTikTokFromHtml returned: ${JSON.stringify(result)}`);
+            this.logger.log(`extractTikTokMetaWithHttp: extracted ${Object.keys(result).length} fields from HTML`);
+            return result;
+        }
+        catch (e) {
+            this.logger.error(`extractTikTokMetaWithHttp failed: ${e?.message || e}`, e?.stack);
+            return {};
+        }
+    }
+    async extractTikTokMetaWithPlaywright(url) {
         const headless = (process.env.PLAYWRIGHT_HEADLESS ?? 'true') === 'true';
         const timeoutMs = Math.max(5000, Math.min(30000, Number(process.env.REVIEWS_SCRAPE_TIMEOUT_MS || 12000)));
         const captureNetwork = true;
@@ -83,6 +137,16 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                 });
             }
             await page.goto(url, { waitUntil: 'load', timeout: timeoutMs });
+            try {
+                const content = await page.content();
+                if (/captcha|verification|security check|verify to continue/i.test(content)) {
+                    this.logger.warn('extractTikTokMetaWithPlaywright: CAPTCHA detected, will fallback to HTTP method');
+                    await context.close();
+                    await browser.close();
+                    return {};
+                }
+            }
+            catch { }
             try {
                 await page.waitForLoadState('networkidle', { timeout: 3000 });
             }
@@ -233,7 +297,7 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                     }));
                     const out = resolve(logsDir, `scrape-net-${Date.now()}.json`);
                     writeFileSync(out, JSON.stringify({ url, count: buckets.length, items: slim }, null, 2), 'utf-8');
-                    this.logger.warn(`extractTikTokMeta: zero reviews, network dump saved: ${out}`);
+                    this.logger.warn(`extractTikTokMetaWithPlaywright: zero reviews, network dump saved: ${out}`);
                 }
                 catch { }
             }
@@ -247,12 +311,12 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                     if ((process.env.DEBUG_ZERO ?? '0') === '1') {
                         const imgPath = dir + sep + `tiktok-zero-${Date.now()}.png`;
                         await page.screenshot({ path: imgPath, fullPage: true });
-                        this.logger.warn(`extractTikTokMeta: zero reviews, screenshot saved: ${imgPath}`);
+                        this.logger.warn(`extractTikTokMetaWithPlaywright: zero reviews, screenshot saved: ${imgPath}`);
                     }
                     if ((process.env.DEBUG_ZERO ?? '0') === '1') {
                         const htmlPath = dir + sep + `tiktok-zero-${Date.now()}.html`;
                         writeFileSync(htmlPath, await page.content(), { encoding: 'utf-8' });
-                        this.logger.warn(`extractTikTokMeta: zero reviews, html saved: ${htmlPath}`);
+                        this.logger.warn(`extractTikTokMetaWithPlaywright: zero reviews, html saved: ${htmlPath}`);
                     }
                 }
                 catch { }
@@ -279,14 +343,17 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
             return out;
         }
         catch (e) {
-            this.logger.warn(`extractTikTokMeta failed: ${e?.message || e}`);
+            this.logger.warn(`extractTikTokMetaWithPlaywright failed: ${e?.message || e}`);
             return {};
         }
     }
     async extractTikTokFromHtml(html) {
+        this.logger.log(`extractTikTokFromHtml: Starting HTML parsing, length: ${html?.length || 0}`);
         try {
-            if (typeof html !== 'string' || html.length < 50)
+            if (typeof html !== 'string' || html.length < 50) {
+                this.logger.warn(`extractTikTokFromHtml: Invalid HTML input, length: ${html?.length || 0}`);
                 return {};
+            }
             const out = {};
             const safeNum = (v) => {
                 const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.\-]/g, ''));
@@ -323,11 +390,14 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                     return Math.round((n1 + n2) / 2);
                 return n1 ?? n2 ?? undefined;
             };
+            this.logger.log('extractTikTokFromHtml: Step 1 - Looking for JSON-LD blocks...');
             const ldBlocks = [];
             try {
                 const reLd = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
                 let m;
+                let jsonLdCount = 0;
                 while ((m = reLd.exec(html))) {
+                    jsonLdCount++;
                     const raw = (m[1] || '').trim();
                     if (!raw)
                         continue;
@@ -336,12 +406,18 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                         try {
                             const j = JSON.parse(c);
                             ldBlocks.push(j);
+                            this.logger.log(`extractTikTokFromHtml: Found JSON-LD: ${JSON.stringify(j).substring(0, 200)}...`);
                         }
-                        catch { }
+                        catch (parseErr) {
+                            this.logger.warn(`extractTikTokFromHtml: Failed to parse JSON-LD: ${parseErr}`);
+                        }
                     }
                 }
+                this.logger.log(`extractTikTokFromHtml: Found ${jsonLdCount} JSON-LD script tags, ${ldBlocks.length} parsed blocks`);
             }
-            catch { }
+            catch (ldErr) {
+                this.logger.error(`extractTikTokFromHtml: Error in JSON-LD extraction: ${ldErr}`);
+            }
             const fromLd = (obj) => {
                 try {
                     if (!obj || typeof obj !== 'object')
@@ -391,6 +467,62 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                     fromLd(b);
                 }
             }
+            this.logger.log(`extractTikTokFromHtml: After JSON-LD processing - Price: ${out.price}, Currency: ${out.currency}, Title: ${out.title ? 'found' : 'not found'}`);
+            this.logger.log('extractTikTokFromHtml: Step 1.5 - Looking for TikTok inline JSON...');
+            try {
+                if (out.price == null || !out.currency || out.discountPrice == null) {
+                    const reScriptAll = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+                    let sm;
+                    let inlineJsonCount = 0;
+                    while ((sm = reScriptAll.exec(html))) {
+                        const code = (sm[1] || '');
+                        if (!/(sku_info|SkuPrice|price_val|price_str|original_price)/i.test(code))
+                            continue;
+                        inlineJsonCount++;
+                        this.logger.log(`extractTikTokFromHtml: Found inline JSON script #${inlineJsonCount} with price patterns`);
+                        const mPriceVal = /"price_val"\s*:\s*([0-9]+)/i.exec(code) || /"price"\s*:\s*([0-9]+)/i.exec(code);
+                        const mPriceStr = /"price_str"\s*:\s*"([^"]+)"/i.exec(code);
+                        const mOrig = /"(?:original_price|origin_price|list_price|max_price)"\s*:\s*([0-9]+)/i.exec(code);
+                        if (mPriceVal)
+                            this.logger.log(`extractTikTokFromHtml: Found price_val: ${mPriceVal[1]}`);
+                        if (mPriceStr)
+                            this.logger.log(`extractTikTokFromHtml: Found price_str: ${mPriceStr[1]}`);
+                        if (mOrig)
+                            this.logger.log(`extractTikTokFromHtml: Found original_price: ${mOrig[1]}`);
+                        if (out.price == null) {
+                            const pv = mPriceVal?.[1] ? toIntPrice(mPriceVal[1]) : undefined;
+                            const ps = mPriceStr?.[1];
+                            const pFromStr = ps ? (toIntPrice(ps) ?? safeNum(ps)) : undefined;
+                            const p = pv ?? pFromStr;
+                            if (Number.isFinite(p)) {
+                                out.price = p;
+                                this.logger.log(`extractTikTokFromHtml: Set price from inline JSON: ${out.price}`);
+                            }
+                        }
+                        if (out.discountPrice == null && mOrig?.[1]) {
+                            const op = toIntPrice(mOrig[1]);
+                            if (Number.isFinite(op)) {
+                                out.discountPrice = op;
+                                this.logger.log(`extractTikTokFromHtml: Set discount price from inline JSON: ${out.discountPrice}`);
+                            }
+                        }
+                        if (!out.currency) {
+                            const mCur = /(VND|USD|IDR|THB|₫|VNĐ)/i.exec(code);
+                            const c = normCurrency(mCur?.[1]);
+                            if (c) {
+                                out.currency = c;
+                                this.logger.log(`extractTikTokFromHtml: Set currency from inline JSON: ${out.currency}`);
+                            }
+                        }
+                        if (out.price != null && out.currency)
+                            break;
+                    }
+                    this.logger.log(`extractTikTokFromHtml: Processed ${inlineJsonCount} inline JSON scripts`);
+                }
+            }
+            catch (inlineErr) {
+                this.logger.error(`extractTikTokFromHtml: Error in inline JSON parsing: ${inlineErr}`);
+            }
             try {
                 if (!out.title) {
                     const mt = /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["'][^>]*>/i.exec(html) ||
@@ -417,9 +549,14 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                         out.price = pr;
                 }
                 if (out.price == null) {
-                    const mPrice = /\"price\"\s*:\s*\"?([0-9][0-9.,]{2,})\"?/i.exec(html) || /item_price\":\s*\"([0-9.,]+)\"/i.exec(html);
-                    const p = toIntPrice(mPrice?.[1]) ?? safeNum(mPrice?.[1]);
-                    if (p)
+                    const mPrice = /\"price\"\s*:\s*\"?([0-9][0-9.,]{1,})\"?/i.exec(html) || /item_price\":\s*\"([0-9.,]+)\"/i.exec(html);
+                    const rawPrice = mPrice?.[1];
+                    const thousandsLike = typeof rawPrice === 'string' && /^[0-9]{1,3}(?:[.,][0-9]{3}){1,4}$/.test(rawPrice);
+                    let p = thousandsLike ? toIntPrice(rawPrice) : safeNum(rawPrice);
+                    if (!Number.isFinite(p) && typeof rawPrice === 'string') {
+                        p = toIntPrice(rawPrice) ?? safeNum(rawPrice);
+                    }
+                    if (Number.isFinite(p))
                         out.price = p;
                 }
                 if (out.price == null) {
@@ -434,6 +571,11 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                 const c = normCurrency(mCur?.[1]);
                 if (c)
                     out.currency = c;
+            }
+            if (!out.currency) {
+                const vnSignal = /(lang=["']?vi\b|vi[-_]?VN|Asia\/Ho_Chi_Minh|\.vn\b)/i.test(html);
+                if (vnSignal)
+                    out.currency = 'VND';
             }
             if (out.ratingAvg == null) {
                 const mR = /"ratingValue"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/i.exec(html);
@@ -481,10 +623,18 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
                         out.currency = 'VND';
                 }
             }
+            if (out.currency === 'VND' && typeof out.price === 'number') {
+                if (out.price < 1000 || out.price > 50_000_000) {
+                    this.logger.warn(`extractTikTokFromHtml: Removing invalid VND price: ${out.price}`);
+                    delete out.price;
+                }
+            }
+            this.logger.log(`extractTikTokFromHtml: Final result - Price: ${out.price}, Currency: ${out.currency}, Discount: ${out.discountPrice}, Title: ${out.title ? 'found' : 'not found'}, Images: ${out.images?.length || 0}`);
+            this.logger.log(`extractTikTokFromHtml: Completed HTML parsing, returning: ${JSON.stringify(out)}`);
             return out;
         }
         catch (e) {
-            this.logger.warn(`extractTikTokFromHtml failed: ${e}`);
+            this.logger.error(`extractTikTokFromHtml failed: ${e}`, e?.stack);
             return {};
         }
     }
@@ -492,6 +642,11 @@ let ReviewsService = ReviewsService_1 = class ReviewsService {
         const { finalUrl, productId } = product;
         const source = product.source || this.detectSourceFromUrl(finalUrl);
         this.logger.log(`extractReviews: source=${source} url=${finalUrl} productId=${productId}`);
+        const env = (process.env.NODE_ENV ?? '').toLowerCase();
+        if (env === 'test') {
+            this.logger.log('extractReviews: disabled in test env');
+            return [];
+        }
         try {
             switch (source) {
                 case 'tiktok':

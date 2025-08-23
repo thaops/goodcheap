@@ -11,8 +11,13 @@ import { UnfurlController } from './unfurl.controller';
       provide: 'UnfurlService',
       useExisting: UnfurlService,
     },
+    // Interface-like token for Clean Architecture DI
+    {
+      provide: 'UnfurlInterface',
+      useExisting: UnfurlService,
+    },
   ],
   controllers: [UnfurlController],
-  exports: [UnfurlService, 'UnfurlService'],
+  exports: [UnfurlService, 'UnfurlService', 'UnfurlInterface'],
 })
 export class UnfurlModule {}

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, HttpException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, BadRequestException, HttpException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { UA } from '../common/ua';
 import { pickJsonLdProduct, pickOpenGraph } from '../common/html';
 import { ProductDTO } from '../common/types';
@@ -6,6 +6,7 @@ import { UnfurlInterface } from '../common/interfaces/unfurl.interface';
 
 @Injectable()
 export class UnfurlService implements UnfurlInterface {
+  private readonly logger = new Logger(UnfurlService.name);
   private ensureValidUrl(url: string) {
     try {
       // Throws on invalid
@@ -91,6 +92,11 @@ export class UnfurlService implements UnfurlInterface {
   async fetchHtml(url: string): Promise<string> {
     this.ensureValidUrl(url);
     try {
+      const env = (process.env.NODE_ENV ?? '').toLowerCase();
+      if (env === 'test') {
+        // Tránh network trong môi trường test để giữ e2e/unit ổn định & nhanh
+        throw new HttpException('Fetch HTML disabled in test environment', 503);
+      }
       const { default: got } = await import('got');
       return await got(url, {
         headers: { 'user-agent': UA },
@@ -124,7 +130,8 @@ export class UnfurlService implements UnfurlInterface {
       let html: string | null = null;
       try {
         html = await this.fetchHtml(finalUrl);
-      } catch {
+      } catch (e: any) {
+        this.logger.warn(`fetchHtml failed for ${finalUrl}: ${e?.message || e}`);
         html = null;
       }
 

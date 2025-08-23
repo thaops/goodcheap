@@ -21,9 +21,13 @@ exports.UnfurlModule = UnfurlModule = __decorate([
                 provide: 'UnfurlService',
                 useExisting: unfurl_service_1.UnfurlService,
             },
+            {
+                provide: 'UnfurlInterface',
+                useExisting: unfurl_service_1.UnfurlService,
+            },
         ],
         controllers: [unfurl_controller_1.UnfurlController],
-        exports: [unfurl_service_1.UnfurlService, 'UnfurlService'],
+        exports: [unfurl_service_1.UnfurlService, 'UnfurlService', 'UnfurlInterface'],
     })
 ], UnfurlModule);
 //# sourceMappingURL=unfurl.module.js.map

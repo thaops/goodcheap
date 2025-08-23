@@ -59,10 +59,13 @@ function pickJsonLdProduct(html) {
 function pickOpenGraph(html) {
     const $ = cheerio.load(html);
     const og = {};
-    $('meta[property^="og:"]').each((_, el) => {
-        const key = $(el).attr('property') || '';
-        const val = $(el).attr('content') || '';
-        og[key] = val;
+    $('meta[property]').each((_, el) => {
+        const key = ($(el).attr('property') || '').trim();
+        const val = ($(el).attr('content') || '').trim();
+        const k = key.toLowerCase();
+        if (k.startsWith('og:') || k.startsWith('product:')) {
+            og[key] = val;
+        }
     });
     return og;
 }

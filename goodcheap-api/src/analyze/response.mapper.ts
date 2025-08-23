@@ -59,6 +59,8 @@ export class ResponseMapper implements ResponseMapperInterface {
     if (!marketplace?.product?.returnPolicy && !marketplace?.product?.warranty && marketplace?.product?.shipping?.cod !== true) {
       warnings.push('missing_marketplace_policies');
     }
+    // Precompute reviews aggregate for reuse (rating breakdown, media ratio, etc.)
+    const reviewsAggregate = this.buildReviewsAggregate(product);
     
     return {
       schemaVersion: '1.1.0',
@@ -122,11 +124,11 @@ export class ResponseMapper implements ResponseMapperInterface {
       socialProof: {
         ratingAvg: product.ratingAvg,
         ratingCount: product.reviewCount,
-        ratingBreakdown: undefined,
+        ratingBreakdown: reviewsAggregate?.breakdown,
         qnaCount: undefined,
       },
       reviews: this.buildReviews(product, analysis, evidence, normalization),
-      reviewsAggregate: this.buildReviewsAggregate(product),
+      reviewsAggregate: reviewsAggregate,
       reviewSummary: {
         topPros: analysis.pros,
         topCons: analysis.cons,
@@ -139,19 +141,7 @@ export class ResponseMapper implements ResponseMapperInterface {
         })) || []),
       },
       psychologyV2,
-      aiAnalysis: {
-        verdict,
-        confidence: analysis.confidence || 0.5,
-        reasons: analysis.decision?.rationale || [],
-        claims: [],
-        citations: evidence
-          .filter(e => e.type !== 'productPage')
-          .map(e => ({
-            evidenceId: e.id,
-            note: e.type,
-            reliability: e.reliability,
-          })),
-      },
+      aiAnalysis: this.buildAiAnalysis(product, analysis, evidence, marketplace, verdict),
       aiDecision,
       evidencePolicy: { countUnlinked: false },
       evidence,
@@ -548,6 +538,131 @@ export class ResponseMapper implements ResponseMapperInterface {
     return { scorecard: sc, flags: flags.length ? flags : undefined };
   }
 
+  private buildAiAnalysis(product: any, analysis: any, evidence: any[], marketplace: any, verdict: any): any {
+    // Helper clamp
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    const toPct = (v: number) => clamp(Math.round(v), 0, 100);
+    // Basic signals
+    const ratingAvg = typeof product?.ratingAvg === 'number' ? product.ratingAvg : undefined;
+    const ratingCount = typeof product?.reviewCount === 'number' ? product.reviewCount : undefined;
+    const priceSale = typeof marketplace?.price?.sale === 'number' ? marketplace.price.sale : (typeof product?.price === 'number' ? product.price : undefined);
+    const median = typeof analysis?.priceBenchmarks?.median === 'number' ? analysis.priceBenchmarks.median : undefined;
+    const reviews = Array.isArray(product?.reviewsSample) ? product.reviewsSample : [];
+    const reviewsWithMedia = reviews.filter((r: any) => Array.isArray(r?.images) && r.images.length > 0).length;
+    const mediaRatio = reviews.length ? (reviewsWithMedia / reviews.length) : 0;
+    const pros = Array.isArray(analysis?.pros) ? analysis.pros : [];
+    const cons = Array.isArray(analysis?.cons) ? analysis.cons : [];
+    // Sentiment score from pros/cons count balance (0..100)
+    const totalSent = pros.length + cons.length;
+    const sentimentScore = totalSent ? toPct(((pros.length - cons.length) / totalSent) * 50 + 50) : 50;
+    // Shop trust
+    const shop = marketplace?.shop || {};
+    const isOfficial = shop?.isOfficialStore === true || (Array.isArray(shop?.badges) && shop.badges.some((b: string) => /mall|official|verified/i.test(b)));
+    const followers = typeof shop?.followers === 'number' ? shop.followers : undefined;
+    const ageDays = typeof shop?.ageDays === 'number' ? shop.ageDays : undefined;
+    const responseRate = typeof shop?.responseRate === 'number' ? shop.responseRate : undefined; // 0..100
+    let shopTrust = 50;
+    if (isOfficial) shopTrust += 20;
+    if (typeof followers === 'number') shopTrust += Math.min(20, Math.log10(Math.max(1, followers + 1)) * 10);
+    if (typeof ageDays === 'number') shopTrust += Math.min(10, Math.log10(Math.max(1, ageDays + 1)) * 5);
+    if (typeof responseRate === 'number') shopTrust += clamp((responseRate - 60) * 0.5, -10, 20);
+    shopTrust = toPct(shopTrust);
+    // Suspicious (duplicate) reviews ratio as simple heuristic
+    const texts = reviews.map((r: any) => String(r?.text || '').trim().toLowerCase()).filter(Boolean);
+    const freq = new Map<string, number>();
+    for (const t of texts) freq.set(t, (freq.get(t) || 0) + 1);
+    const dupCount = Array.from(freq.values()).filter(v => v >= 2).reduce((a, b) => a + b, 0);
+    const suspiciousRatio = reviews.length ? clamp(dupCount / reviews.length, 0, 1) : 0;
+    // Price vs median (if available)
+    let priceScore = 50;
+    let priceReason = 'Chưa đủ dữ liệu so sánh giá';
+    if (typeof priceSale === 'number' && typeof median === 'number' && median > 0) {
+      const diffPct = ((priceSale - median) / median) * 100; // negative means cheaper
+      // Reward slightly cheaper (down to -20%), penalize too cheap (< -50%) or too expensive (> +30%)
+      if (diffPct <= -50) priceScore = 30; else if (diffPct <= -20) priceScore = 85; else if (diffPct <= 10) priceScore = 75; else if (diffPct <= 30) priceScore = 55; else priceScore = 40;
+      priceReason = `Giá so với trung vị: ${Math.round(diffPct)}%`;
+    }
+    // Review count score (cap at 20k)
+    const reviewCountScore = typeof ratingCount === 'number' ? toPct(Math.min(100, Math.log10(Math.max(10, ratingCount)) * 25)) : 50;
+    // Rating avg score
+    const ratingScore = typeof ratingAvg === 'number' ? toPct((ratingAvg / 5) * 100) : 50;
+    // Media score
+    const mediaScore = toPct(mediaRatio * 100);
+    // Price trend & volatility (optional)
+    const history = Array.isArray(marketplace?.price?.history) ? marketplace.price.history : [];
+    let trendAdj = 0;
+    if (history.length >= 4) {
+      const diffs = [] as number[];
+      for (let i = 1; i < history.length; i++) {
+        const prev = history[i - 1]?.price;
+        const cur = history[i]?.price;
+        if (typeof prev === 'number' && typeof cur === 'number') diffs.push(cur - prev);
+      }
+      const mean = diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : 0;
+      const variance = diffs.length ? diffs.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / diffs.length : 0;
+      const std = Math.sqrt(variance);
+      // Slight bonus if decreasing modestly, penalty if highly volatile
+      if (mean < 0) trendAdj += Math.min(5, Math.abs(mean) * 0.02);
+      trendAdj -= Math.min(10, std * 0.02);
+    }
+    // Weights
+    const W = {
+      price: 0.20,
+      reviewCount: 0.15,
+      rating: 0.15,
+      media: 0.10,
+      sentiment: 0.15,
+      shopTrust: 0.10,
+      fakeReviews: 0.15,
+    };
+    // Base weighted score
+    let score = 0;
+    score += W.price * priceScore;
+    score += W.reviewCount * reviewCountScore;
+    score += W.rating * ratingScore;
+    score += W.media * mediaScore;
+    score += W.sentiment * sentimentScore;
+    score += W.shopTrust * shopTrust;
+    // Apply trend adjustment lightly
+    score = clamp(score + trendAdj, 0, 100);
+    // Apply fake review penalty up to -30%
+    const penaltyFactor = 1 - (0.3 * suspiciousRatio);
+    score = clamp(score * penaltyFactor, 0, 100);
+    // Confidence 0..1: combination of score, evidence diversity, and linked ratio
+    const linked = Array.isArray(evidence) ? evidence.filter(e => e.linkedToProduct === true) : [];
+    const diversity = new Set(linked.map(e => e.type)).size;
+    const linkedRatio = evidence?.length ? (linked.length / evidence.length) : 0;
+    const confidence = clamp(((score / 100) * 0.6) + (Math.min(1, diversity / 3) * 0.2) + (linkedRatio * 0.2), 0, 1);
+    // Reasons (Vietnamese, concise, with numbers)
+    const reasons: string[] = [];
+    if (typeof priceSale === 'number') reasons.push(`${priceReason}`);
+    if (typeof ratingAvg === 'number') reasons.push(`Điểm sao TB: ${ratingAvg}/5 (~${ratingCount ?? '?'} đánh giá)`);
+    if (reviews.length) reasons.push(`Tỉ lệ review có ảnh/video: ${Math.round(mediaRatio * 100)}% (${reviewsWithMedia}/${reviews.length})`);
+    reasons.push(`Sentiment (pros/cons): ${pros.length}/${cons.length} → ${sentimentScore}/100`);
+    reasons.push(`Uy tín shop: ${shopTrust}/100${isOfficial ? ' (Official)' : ''}${typeof responseRate === 'number' ? `, phản hồi ${responseRate}%` : ''}`);
+    if (reviews.length >= 5) reasons.push(`Nghi ngờ review trùng lặp: ${Math.round(suspiciousRatio * 100)}%`);
+    if (trendAdj) reasons.push(`Xu hướng giá: điều chỉnh ${Math.round(trendAdj)} điểm`);
+    // Claims with evidenceId
+    const claims: any[] = [];
+    const prodEvidenceId = 'prod:page';
+    if (typeof ratingAvg === 'number') claims.push({ label: 'ratingAvg', value: ratingAvg, evidenceId: prodEvidenceId });
+    if (typeof ratingCount === 'number') claims.push({ label: 'ratingCount', value: ratingCount, evidenceId: prodEvidenceId });
+    if (typeof priceSale === 'number') claims.push({ label: 'price', value: priceSale, evidenceId: prodEvidenceId });
+    if (reviews.length) claims.push({ label: 'reviewWithMediaRatio', value: Number(mediaRatio.toFixed(2)), evidenceId: prodEvidenceId });
+    if (Array.isArray(marketplace?.price?.history) && marketplace.price.history.length) claims.push({ label: 'priceHistoryPoints', value: marketplace.price.history.length, evidenceId: prodEvidenceId });
+    // Citations: non-productPage evidence
+    const citations = (Array.isArray(evidence) ? evidence : [])
+      .filter(e => e.type !== 'productPage')
+      .map(e => ({ evidenceId: e.id, note: e.type, reliability: e.reliability }));
+    return {
+      verdict,
+      confidence: Number(confidence.toFixed(2)),
+      reasons,
+      claims,
+      citations,
+    };
+  }
+
   private buildAiDecision(verdict: any, evidence: any[], marketplace: any, priceFlags: string[]): any {
     const linked = Array.isArray(evidence) ? evidence.filter(e => e.linkedToProduct === true) : [];
     const diversity = new Set(linked.map(e => e.type)).size;
@@ -656,9 +771,33 @@ export class ResponseMapper implements ResponseMapperInterface {
       }
       return Object.keys(out).length ? out : undefined;
     })();
+    const reviewWithImagesPercent = (() => {
+      // Prefer explicit product field if provided (0..1)
+      const pct = (product as any)?.reviewWithImagesPercent;
+      if (typeof pct === 'number' && Number.isFinite(pct)) {
+        return Math.max(0, Math.min(1, pct));
+      }
+      // Fallback: compute from reviewsSample
+      try {
+        const sample = Array.isArray((product as any)?.reviewsSample) ? (product as any).reviewsSample : [];
+        if (!sample.length) return undefined;
+        let total = 0;
+        let withMedia = 0;
+        for (const r of sample) {
+          total += 1;
+          const imgs = this.normalizeMedia((r as any)?.images);
+          const vids = this.normalizeMedia((r as any)?.videos);
+          if ((imgs && imgs.length) || (vids && vids.length)) withMedia += 1;
+        }
+        if (!total) return undefined;
+        return Math.round(((withMedia / total) * 100)) / 100; // round to 2 decimals
+      } catch {
+        return undefined;
+      }
+    })();
     const recentCount30d = typeof (product as any)?.recentReviewCount30d === 'number' ? (product as any).recentReviewCount30d : undefined;
     const verifiedPurchaseRatio = typeof (product as any)?.verifiedPurchaseRatio === 'number' ? (product as any).verifiedPurchaseRatio : undefined;
-    return { count, average, breakdown, recentCount30d, verifiedPurchaseRatio };
+    return { count, average, breakdown, recentCount30d, verifiedPurchaseRatio, reviewWithImagesPercent };
   }
 
   private isReviewRelatedToProduct(review: any, normalization: any): boolean {
@@ -940,10 +1079,16 @@ export class ResponseMapper implements ResponseMapperInterface {
   }
 
   private normalizeVndScale(value: any, currency: string | undefined, platform?: string): number | undefined {
-    const n = typeof value === 'number' ? value : undefined;
-    if (n == null) return undefined;
-    // Trust source data as-is. No VND scaling for any platform.
-    return n;
+    const nRaw = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(nRaw)) return undefined;
+    const cur = String(currency || '').toUpperCase();
+    // Only consider scaling for VND
+    if (cur !== 'VND') return nRaw;
+    // TikTok: trust source price as-is to avoid inflating valid low prices
+    if (platform === 'tiktok') return nRaw;
+    // Shopee/Lazada/Others: some sources encode VND in thousands (e.g., 426 => 426,000)
+    if (nRaw > 0 && nRaw < 1000) return Math.round(nRaw * 1000);
+    return nRaw;
   }
 
   private toIsoDateTime(v: any): string {
